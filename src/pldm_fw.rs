@@ -54,6 +54,15 @@ fn parse_string(typ: u8, buf: &[u8]) -> VResult<&[u8], DescriptorString> {
     let s = match typ {
         0 => DescriptorString::Bytes(v),
         1 | 2 => DescriptorString::String(String::from_utf8(v).unwrap()),
+        3 => {
+            let b16 = v
+                .iter()
+                .tuples()
+                .map(|(a, b)| ((*a as u16) << 8 | (*b as u16)))
+                .collect::<Vec<u16>>();
+
+            DescriptorString::String(String::from_utf16(&b16).unwrap())
+        }
         _ => unimplemented!(),
     };
     Ok((&[], s))
