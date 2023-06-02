@@ -6,3 +6,6 @@ edition = "2021"
 [dependencies]
 libc = "0.2"
 nom = "7.1"
+itertools = "0.10"
+chrono = "0.4"
+enumset = "1.1"

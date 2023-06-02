@@ -18,5 +18,9 @@ fn main() -> std::io::Result<()> {
 
     println!("device: {}", dev);
 
+    let params = pldm_fw::query_firmware_parameters(&sock, EID)?;
+
+    println!("params: {:#?}", params);
+
     Ok(())
 }
