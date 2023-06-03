@@ -9,10 +9,9 @@ mod mctp;
 mod pldm;
 mod pldm_fw;
 
+use clap::{Parser, Subcommand};
 use enumset::{EnumSet, EnumSetType};
 use std::fmt::Write;
-
-const EID: u8 = 0x09;
 
 fn comma_separated<T: EnumSetType + std::fmt::Debug>(e: EnumSet<T>) -> String {
     let mut s = String::new();
@@ -64,13 +63,45 @@ fn print_device_info(
     }
 }
 
+fn eid_parse(s: &str) -> Result<u8, String> {
+    const HEX_PREFIX: &str = "0x";
+    const HEX_PREFIX_LEN: usize = HEX_PREFIX.len();
+
+    let result = if s.to_ascii_lowercase().starts_with(HEX_PREFIX) {
+        u8::from_str_radix(&s[HEX_PREFIX_LEN..], 16)
+    } else {
+        s.parse()
+    };
+
+    result.map_err(|e| e.to_string())
+}
+
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// MCTP EID of device
+    #[clap(value_parser=eid_parse)]
+    eid: u8,
+
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(Subcommand, Debug)]
+enum Command {
+    Inventory,
+}
+
 fn main() -> std::io::Result<()> {
+    let args = Args::parse();
     let sock = mctp::MctpSocket::new()?;
 
-    let dev = pldm_fw::query_device_identifiers(&sock, EID)?;
-    let params = pldm_fw::query_firmware_parameters(&sock, EID)?;
+    let dev = pldm_fw::query_device_identifiers(&sock, args.eid)?;
+    let params = pldm_fw::query_firmware_parameters(&sock, args.eid)?;
 
-    print_device_info(&dev, &params);
+    match args.command {
+        Some(Command::Inventory) | None => print_device_info(&dev, &params),
+    }
 
     Ok(())
 }
