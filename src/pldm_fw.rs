@@ -30,7 +30,7 @@ const PLDM_TYPE_FW: u8 = 5;
 type VResult<I, O> = IResult<I, O>;
 
 #[derive(Debug)]
-enum DescriptorString {
+pub enum DescriptorString {
     String(String),
     Bytes(Vec<u8>),
 }
@@ -57,7 +57,7 @@ impl fmt::Display for DescriptorString {
 }
 
 #[derive(Debug)]
-enum Descriptor {
+pub enum Descriptor {
     PciVid(u16),
     Vendor(DescriptorString),
 }
@@ -117,7 +117,7 @@ impl fmt::Display for Descriptor {
 
 #[derive(Debug)]
 pub struct DeviceIdentifiers {
-    ids: Vec<Descriptor>,
+    pub ids: Vec<Descriptor>,
 }
 
 impl DeviceIdentifiers {
@@ -158,14 +158,27 @@ pub fn query_device_identifiers(
         .map_err(|_e| io::Error::new(io::ErrorKind::Other, "parse error"))
 }
 
-type PldmDate = chrono::naive::NaiveDate;
+pub type PldmDate = chrono::naive::NaiveDate;
 
 #[derive(Debug)]
 #[allow(dead_code)]
 pub struct ComponentVersion {
-    stamp: u32,
-    version: DescriptorString,
-    date: Option<PldmDate>,
+    pub stamp: u32,
+    pub version: DescriptorString,
+    pub date: Option<PldmDate>,
+}
+
+impl fmt::Display for ComponentVersion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.version)?;
+        if let Some(d) = self.date {
+            write!(f, " ({:?})", d)?;
+        }
+        if self.stamp != 0 {
+            write!(f, " [{:08x}]", self.stamp)?;
+        }
+        Ok(())
+    }
 }
 
 pub fn pldm_date_parse(buf: &[u8]) -> VResult<&[u8], Option<PldmDate>> {
@@ -188,7 +201,7 @@ pub fn pldm_date_parse(buf: &[u8]) -> VResult<&[u8], Option<PldmDate>> {
 }
 
 #[derive(Debug)]
-enum ComponentClassification {
+pub enum ComponentClassification {
     Unknown,
     Other,
     Firmware,
@@ -206,7 +219,7 @@ impl From<u16> for ComponentClassification {
 }
 
 #[derive(EnumSetType, Debug)]
-enum ActivationMethod {
+pub enum ActivationMethod {
     PendingComponentImageSet = 7,
     PendingImage = 6,
     ACPowerCycle = 5,
@@ -220,7 +233,7 @@ enum ActivationMethod {
 type ActivationMethods = EnumSet<ActivationMethod>;
 
 #[derive(EnumSetType, Debug)]
-enum DeviceCapability {
+pub enum DeviceCapability {
     ComponentUpdateFailureRecovery = 0,
     ComponentUpdateFailureRetry = 1,
     FDHostFunctionalityDuringUpdate = 2,
@@ -230,28 +243,28 @@ enum DeviceCapability {
     SecurityRevisionUpdateRequest = 9,
 }
 
-type DeviceCapabilities = EnumSet<DeviceCapability>;
+pub type DeviceCapabilities = EnumSet<DeviceCapability>;
 
 #[derive(EnumSetType, Debug)]
-enum ComponentCapability {
+pub enum ComponentCapability {
     FDApplyState = 0,
     ComponentDowngrade = 2,
     SecurityRevisionUpdateRequest = 3,
     SecurityRevisionNotLatest = 4,
 }
 
-type ComponentCapabilities = EnumSet<ComponentCapability>;
+pub type ComponentCapabilities = EnumSet<ComponentCapability>;
 
 #[derive(Debug)]
 #[allow(dead_code)]
 pub struct Component {
-    classification: ComponentClassification,
-    identifier: u16,
-    classificationindex: u8,
-    active: ComponentVersion,
-    pending: ComponentVersion,
-    activation_methods: ActivationMethods,
-    caps_during_update: ComponentCapabilities,
+    pub classification: ComponentClassification,
+    pub identifier: u16,
+    pub classificationindex: u8,
+    pub active: ComponentVersion,
+    pub pending: ComponentVersion,
+    pub activation_methods: ActivationMethods,
+    pub caps_during_update: ComponentCapabilities,
 }
 
 impl Component {
@@ -309,10 +322,10 @@ impl Component {
 #[derive(Debug)]
 #[allow(dead_code)]
 pub struct FirmwareParameters {
-    caps: DeviceCapabilities,
-    components: Vec<Component>,
-    active: DescriptorString,
-    pending: DescriptorString,
+    pub caps: DeviceCapabilities,
+    pub components: Vec<Component>,
+    pub active: DescriptorString,
+    pub pending: DescriptorString,
 }
 
 impl FirmwareParameters {
