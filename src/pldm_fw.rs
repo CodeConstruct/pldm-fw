@@ -37,8 +37,15 @@ enum DescriptorString {
 
 impl fmt::Display for DescriptorString {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let trim_chars = ['\0', ' '];
         match self {
-            Self::String(s) => write!(f, "{}", s),
+            Self::String(s) => {
+                write!(
+                    f,
+                    "{}",
+                    s.trim_end_matches(&trim_chars).escape_default()
+                )
+            }
             Self::Bytes(bs) => {
                 for b in bs {
                     write!(f, "{:02x}", b)?;
