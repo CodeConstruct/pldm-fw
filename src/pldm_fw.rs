@@ -18,7 +18,7 @@ use nom::{
     bytes::complete::{tag, take},
     character::complete::{i32 as c_i32, u32 as c_u32},
     combinator::{complete, map, map_parser, value},
-    multi::{count, length_count, length_data, length_value},
+    multi::{count, length_count, length_value},
     number::complete::{le_u16, le_u32, le_u8},
     sequence::tuple,
     IResult,
@@ -62,23 +62,34 @@ pub enum Descriptor {
     Vendor(DescriptorString),
 }
 
-fn parse_string(typ: u8, buf: &[u8]) -> VResult<&[u8], DescriptorString> {
-    let v = buf.to_vec();
-    let s = match typ {
-        0 => DescriptorString::Bytes(v),
-        1 | 2 => DescriptorString::String(String::from_utf8(v).unwrap()),
-        3 => {
-            let b16 = v
-                .iter()
-                .tuples()
-                .map(|(a, b)| ((*a as u16) << 8 | (*b as u16)))
-                .collect::<Vec<u16>>();
+pub fn parse_string<'a>(
+    typ: u8,
+    len: u8,
+) -> impl FnMut(&'a [u8]) -> VResult<&'a [u8], DescriptorString> {
+    map(take(len), move |d: &[u8]| {
+        let v = d.to_vec();
+        match typ {
+            0 => DescriptorString::Bytes(v),
+            1 | 2 => DescriptorString::String(String::from_utf8(v).unwrap()),
+            3 => {
+                let b16 = v
+                    .iter()
+                    .tuples()
+                    .map(|(a, b)| ((*a as u16) << 8 | (*b as u16)))
+                    .collect::<Vec<u16>>();
 
-            DescriptorString::String(String::from_utf16(&b16).unwrap())
+                DescriptorString::String(String::from_utf16(&b16).unwrap())
+            }
+            _ => unimplemented!(),
         }
-        _ => unimplemented!(),
-    };
-    Ok((&[], s))
+    })
+}
+
+// Where we have type, length and data all adjacent (and in that order)
+#[allow(dead_code)]
+pub fn parse_string_adjacent(buf: &[u8]) -> VResult<&[u8], DescriptorString> {
+    let (r, (typ, len)) = tuple((le_u8, le_u8))(buf)?;
+    parse_string(typ, len)(r)
 }
 
 impl Descriptor {
@@ -87,22 +98,20 @@ impl Descriptor {
         Ok((rest, Self::PciVid(id)))
     }
 
-    pub fn parse_vendor(buf: &[u8]) -> VResult<&[u8], Self> {
+    pub fn parse_vendor(len: u16, buf: &[u8]) -> VResult<&[u8], Self> {
         // TODO: we're parsing the entire descriptor as bytes for now,
         // extract the title string in future.
-        let (r, s) = parse_string(0, buf)?;
-        Ok((r, Self::Vendor(s)))
+        let (r, d) = take(len)(buf)?;
+        Ok((r, Self::Vendor(DescriptorString::Bytes(d.to_vec()))))
     }
 
     pub fn parse(buf: &[u8]) -> VResult<&[u8], Self> {
-        let (rem, (typ, data)) = tuple((le_u16, length_data(le_u16)))(buf)?;
-        let f = match typ {
-            0x0000 => Self::parse_pcivid,
-            0xffff => Self::parse_vendor,
+        let (rem, (typ, len)) = tuple((le_u16, le_u16))(buf)?;
+        match typ {
+            0x0000 => Self::parse_pcivid(rem),
+            0xffff => Self::parse_vendor(len, rem),
             _ => unimplemented!(),
-        };
-        let (_, r) = complete(f)(data)?;
-        Ok((rem, r))
+        }
     }
 }
 
@@ -346,10 +355,8 @@ impl Component {
             le_u32,
         ))(buf)?;
 
-        let (r, (c1_buf, c2_buf)) = tuple((take(c1.2), take(c2.2)))(r)?;
-
-        let (_, c1_str) = parse_string(c1.1, c1_buf)?;
-        let (_, c2_str) = parse_string(c2.1, c2_buf)?;
+        let (r, c1_str) = parse_string(c1.1, c1.2)(r)?;
+        let (r, c2_str) = parse_string(c2.1, c2.2)(r)?;
 
         let c = Component {
             classification: classification.into(),
@@ -397,10 +404,8 @@ impl FirmwareParameters {
             pending_str_len,
         ) = p;
 
-        let (r, active_buf) = take(active_str_len)(r)?;
-        let (_, active) = parse_string(active_str_type, active_buf)?;
-        let (r, pending_buf) = take(pending_str_len)(r)?;
-        let (_, pending) = parse_string(pending_str_type, pending_buf)?;
+        let (r, active) = parse_string(active_str_type, active_str_len)(r)?;
+        let (r, pending) = parse_string(pending_str_type, pending_str_len)(r)?;
 
         let (r, components) = count(Component::parse, ccount as usize)(r)?;
 
