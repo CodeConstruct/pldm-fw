@@ -90,6 +90,7 @@ struct Args {
 #[derive(Subcommand, Debug)]
 enum Command {
     Inventory,
+    Update,
 }
 
 fn main() -> std::io::Result<()> {
@@ -101,6 +102,10 @@ fn main() -> std::io::Result<()> {
 
     match args.command {
         Some(Command::Inventory) | None => print_device_info(&dev, &params),
+        Some(Command::Update) => {
+            let _ = pldm_fw::request_update(&ep);
+            let _ = pldm_fw::cancel_update(&ep);
+        }
     }
 
     Ok(())

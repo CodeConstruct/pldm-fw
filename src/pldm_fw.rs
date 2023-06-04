@@ -433,3 +433,58 @@ pub fn query_firmware_parameters(
     res.map(|(_, d)| d)
         .map_err(|_e| io::Error::new(io::ErrorKind::Other, "parse error"))
 }
+
+const XFER_SIZE: usize = 16 * 1024;
+
+#[derive(Debug)]
+pub struct RequestUpdateResponse {
+    pub fd_metadata_len: u16,
+    pub fd_will_sent_gpd: u8,
+    pub gpd_max_xfer_size: u16,
+}
+
+impl RequestUpdateResponse {
+    pub fn parse(buf: &[u8]) -> VResult<&[u8], Self> {
+        let (r, t) = tuple((le_u16, le_u8, le_u16))(buf)?;
+        Ok((
+            r,
+            RequestUpdateResponse {
+                fd_metadata_len: t.0,
+                fd_will_sent_gpd: t.1,
+                gpd_max_xfer_size: t.2,
+            },
+        ))
+    }
+}
+
+pub fn request_update(ep: &MctpEndpoint) -> Result<RequestUpdateResponse> {
+    let mut req = pldm::PldmRequest::new(PLDM_TYPE_FW, 0x10);
+
+    req.data.extend_from_slice(&XFER_SIZE.to_le_bytes());
+    req.data.extend_from_slice(&1u16.to_le_bytes()); // NumberOfComponents
+    req.data.extend_from_slice(&1u8.to_le_bytes()); // MaximumOutstandingTransferRequests
+    req.data.extend_from_slice(&0u16.to_le_bytes()); // PackageDataLength
+    req.data.extend_from_slice(&1u8.to_le_bytes());
+    req.data.extend_from_slice(&4u8.to_le_bytes());
+    req.data.extend_from_slice("meep".as_bytes()); // component image version string
+
+    let rsp = pldm::pldm_xfer(ep, req)?;
+
+    if rsp.cc != 0 {
+        return Err(io::Error::new(io::ErrorKind::Other, "PLDM error"));
+    }
+
+    println!("request rsp: {:?}", rsp.data);
+
+    let res = complete(RequestUpdateResponse::parse)(rsp.data.as_slice());
+
+    res.map(|(_, d)| d)
+        .map_err(|_e| io::Error::new(io::ErrorKind::Other, "parse error"))
+}
+
+pub fn cancel_update(ep: &MctpEndpoint) -> Result<()> {
+    let req = pldm::PldmRequest::new(PLDM_TYPE_FW, 0x1d);
+    let rsp = pldm::pldm_xfer(ep, req)?;
+    println!("cancel rsp: cc {:x}, data {:?}", rsp.cc, rsp.data);
+    Ok(())
+}
