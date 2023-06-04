@@ -7,7 +7,7 @@
 
 use std::io::Result;
 
-use crate::mctp::{self, MctpSockAddr, MctpSocket};
+use crate::mctp::MctpEndpoint;
 
 pub const MCTP_TYPE_PLDM: u8 = 0x01;
 
@@ -37,23 +37,17 @@ pub struct PldmResponse {
     pub data: Vec<u8>,
 }
 
-pub fn pldm_xfer(
-    sk: &MctpSocket,
-    eid: u8,
-    req: PldmRequest,
-) -> Result<PldmResponse> {
-    let tx_addr = MctpSockAddr::new(eid, MCTP_TYPE_PLDM, mctp::MCTP_TAG_OWNER);
-
+pub fn pldm_xfer(ep: &MctpEndpoint, req: PldmRequest) -> Result<PldmResponse> {
     let mut tx_buf = Vec::with_capacity(req.data.len() + 2);
     tx_buf.push(1 << 7);
     tx_buf.push(req.typ & 0x3f);
     tx_buf.push(req.cmd);
     tx_buf.extend_from_slice(&req.data);
 
-    sk.sendto(&tx_buf, &tx_addr)?;
+    ep.send(MCTP_TYPE_PLDM, &tx_buf)?;
 
     let mut rx_buf = [0u8; 1024]; // todo: set size? peek?
-    let (sz, _rx_addr) = sk.recvfrom(&mut rx_buf)?;
+    let sz = ep.recv(&mut rx_buf)?;
 
     if sz < 4 {
         todo!();

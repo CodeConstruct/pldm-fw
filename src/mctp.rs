@@ -7,7 +7,7 @@
 
 use core::mem;
 use std::fmt;
-use std::io::{Error, Result};
+use std::io::{Error, ErrorKind, Result};
 use std::os::unix::io::RawFd;
 
 /* until we have these in libc... */
@@ -128,5 +128,33 @@ impl MctpSocket {
         } else {
             Ok(rc as usize)
         }
+    }
+}
+
+pub struct MctpEndpoint {
+    eid: u8,
+    sock: MctpSocket,
+}
+
+impl MctpEndpoint {
+    pub fn new(eid: u8) -> Result<Self> {
+        Ok(MctpEndpoint {
+            eid,
+            sock: MctpSocket::new()?,
+        })
+    }
+
+    pub fn send(&self, typ: u8, buf: &[u8]) -> Result<()> {
+        let addr = MctpSockAddr::new(self.eid, typ, MCTP_TAG_OWNER);
+        self.sock.sendto(&buf, &addr)?;
+        Ok(())
+    }
+
+    pub fn recv(&self, buf: &mut [u8]) -> Result<usize> {
+        let (sz, addr) = self.sock.recvfrom(buf)?;
+        if addr.0.smctp_addr != self.eid {
+            return Err(Error::new(ErrorKind::Other, "invalid sender"));
+        }
+        Ok(sz)
     }
 }

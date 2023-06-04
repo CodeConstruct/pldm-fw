@@ -94,10 +94,10 @@ enum Command {
 
 fn main() -> std::io::Result<()> {
     let args = Args::parse();
-    let sock = mctp::MctpSocket::new()?;
+    let ep = mctp::MctpEndpoint::new(args.eid)?;
 
-    let dev = pldm_fw::query_device_identifiers(&sock, args.eid)?;
-    let params = pldm_fw::query_firmware_parameters(&sock, args.eid)?;
+    let dev = pldm_fw::query_device_identifiers(&ep)?;
+    let params = pldm_fw::query_firmware_parameters(&ep)?;
 
     match args.command {
         Some(Command::Inventory) | None => print_device_info(&dev, &params),

@@ -5,7 +5,7 @@
  * Copyright (c) 2023 Code Construct
  */
 
-use crate::mctp::MctpSocket;
+use crate::mctp::MctpEndpoint;
 use crate::pldm;
 use core::fmt;
 use std::io::{self, Result};
@@ -139,12 +139,11 @@ impl fmt::Display for DeviceIdentifiers {
 }
 
 pub fn query_device_identifiers(
-    sk: &MctpSocket,
-    eid: u8,
+    ep: &MctpEndpoint,
 ) -> Result<DeviceIdentifiers> {
     let req = pldm::PldmRequest::new(PLDM_TYPE_FW, 0x01);
 
-    let rsp = pldm::pldm_xfer(sk, eid, req)?;
+    let rsp = pldm::pldm_xfer(ep, req)?;
 
     if rsp.cc != 0 {
         return Err(io::Error::new(io::ErrorKind::Other, "PLDM error"));
@@ -417,12 +416,11 @@ impl FirmwareParameters {
 }
 
 pub fn query_firmware_parameters(
-    sk: &MctpSocket,
-    eid: u8,
+    ep: &MctpEndpoint,
 ) -> Result<FirmwareParameters> {
     let req = pldm::PldmRequest::new(PLDM_TYPE_FW, 0x02);
 
-    let rsp = pldm::pldm_xfer(sk, eid, req)?;
+    let rsp = pldm::pldm_xfer(ep, req)?;
 
     if rsp.cc != 0 {
         return Err(io::Error::new(io::ErrorKind::Other, "PLDM error"));
