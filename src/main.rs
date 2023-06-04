@@ -36,8 +36,8 @@ fn print_device_info(
         fwp.caps.as_u32(),
         if fwp.caps.is_empty() { " none" } else { "" }
     );
-    for cap in fwp.caps.iter() {
-        println!("    * {:?}", cap);
+    for (cap, is_set) in fwp.caps.values() {
+        println!("    * {}", cap.to_desc(is_set));
     }
     println!(
         "  Components:{}",

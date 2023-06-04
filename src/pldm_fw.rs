@@ -10,7 +10,7 @@ use crate::pldm;
 use core::fmt;
 use std::io::{self, Result};
 
-use enumset::{EnumSet, EnumSetIter, EnumSetType};
+use enumset::{EnumSet, EnumSetType};
 use itertools::Itertools;
 
 use nom::{
@@ -243,6 +243,40 @@ pub enum DeviceCapability {
     SecurityRevisionUpdateRequest = 9,
 }
 
+impl DeviceCapability {
+    pub fn to_desc(&self, is_set: bool) -> String {
+        match self {
+            Self::ComponentUpdateFailureRecovery =>
+                format!("Device will{} revert to previous component on failure",
+                        if is_set { " not" } else { "" }),
+            Self::ComponentUpdateFailureRetry =>
+                format!("{} restarting update on failure",
+                        if is_set { "Requires" } else { "Does not require" }),
+            Self::FDHostFunctionalityDuringUpdate =>
+                format!("Host functionality is{} reduced during update",
+                        if is_set { "" } else { " not" }),
+            Self::FDPartialUpdates =>
+                format!("Device can{} accept a partial update",
+                        if is_set { "" } else { "not" }),
+            Self::FDUpdateModeRestrictionOSActive =>
+                String::from(if is_set {
+                    "No host OS restrictions during update"
+                } else {
+                    "Device unable to update while host OS active"
+                }),
+            Self::FDDowngradeRestrictions =>
+                String::from(if is_set {
+                    "No downgrade restrictions"
+                } else {
+                    "Downgrades may be restricted"
+                }),
+            Self::SecurityRevisionUpdateRequest =>
+                format!("Device components {} have security revision numbers",
+                        if is_set { "may" } else { "do not" }),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct DeviceCapabilities(EnumSet<DeviceCapability>);
 
@@ -256,12 +290,15 @@ impl DeviceCapabilities {
         self.0.as_u32()
     }
 
-    pub fn iter(&self) -> EnumSetIter<DeviceCapability> {
-        self.0.iter()
-    }
-
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
+    }
+
+    pub fn values(&self) -> Vec<(DeviceCapability, bool)> {
+        EnumSet::<DeviceCapability>::all()
+            .iter()
+            .map(|cap| (cap, self.0.contains(cap)))
+            .collect()
     }
 }
 
