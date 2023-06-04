@@ -10,7 +10,7 @@ use crate::pldm;
 use core::fmt;
 use std::io::{self, Result};
 
-use enumset::{EnumSet, EnumSetType};
+use enumset::{EnumSet, EnumSetIter, EnumSetType};
 use itertools::Itertools;
 
 use nom::{
@@ -243,7 +243,27 @@ pub enum DeviceCapability {
     SecurityRevisionUpdateRequest = 9,
 }
 
-pub type DeviceCapabilities = EnumSet<DeviceCapability>;
+#[derive(Debug)]
+pub struct DeviceCapabilities(EnumSet<DeviceCapability>);
+
+impl DeviceCapabilities {
+    pub fn from_u32(x: u32) -> Self {
+        let x = x & EnumSet::<DeviceCapability>::all().as_u32();
+        Self(EnumSet::<DeviceCapability>::from_u32(x))
+    }
+
+    pub fn as_u32(&self) -> u32 {
+        self.0.as_u32()
+    }
+
+    pub fn iter(&self) -> EnumSetIter<DeviceCapability> {
+        self.0.iter()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
 
 #[derive(EnumSetType, Debug)]
 pub enum ComponentCapability {
