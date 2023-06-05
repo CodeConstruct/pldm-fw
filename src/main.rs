@@ -75,6 +75,16 @@ fn print_package(pkg: &pldm_fw_pkg::Package) {
         println!("       options:    0x{:x}", dev.option_flags);
         println!("       components: {}", dev.components.as_index_str());
     }
+    println!("  Components:");
+    for (idx, cmp) in pkg.components.iter().enumerate() {
+        println!("   {:2}:", idx);
+        println!("       classification: {:?}", cmp.classification);
+        println!("       identifier:     0x{:04x}", cmp.identifier);
+        println!("       version:        {}", cmp.version);
+        println!("       comparison:     0x{:08x}", cmp.comparison_stamp);
+        println!("       options:        0x{:04x}", cmp.options);
+        println!("       activation:     0x{:04x}", cmp.activation_method);
+    }
 }
 
 fn eid_parse(s: &str) -> Result<u8, String> {

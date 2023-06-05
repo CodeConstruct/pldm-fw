@@ -93,10 +93,62 @@ impl PackageDevice {
 }
 
 #[derive(Debug)]
+pub struct PackageComponent {
+    pub classification: pldm_fw::ComponentClassification,
+    pub identifier: u16,
+    pub comparison_stamp: u32,
+    pub options: u16,
+    pub activation_method: u16,
+    pub file_offset: usize,
+    pub file_size: usize,
+    pub version: DescriptorString,
+}
+
+impl PackageComponent {
+    pub fn parse(buf: &[u8]) -> VResult<&[u8], Self> {
+        let (
+            r,
+            (
+                classification,
+                identifier,
+                comparison_stamp,
+                options,
+                activation_method,
+                file_offset,
+                file_size,
+                version,
+            ),
+        ) = tuple((
+            le_u16,
+            le_u16,
+            le_u32,
+            le_u16,
+            le_u16,
+            le_u32,
+            le_u32,
+            parse_string_adjacent,
+        ))(buf)?;
+
+        let c = PackageComponent {
+            classification: classification.into(),
+            identifier,
+            comparison_stamp,
+            options,
+            activation_method,
+            file_offset: file_offset as usize,
+            file_size: file_size as usize,
+            version,
+        };
+        Ok((r, c))
+    }
+}
+
+#[derive(Debug)]
 pub struct Package {
     pub identifier: Uuid,
     pub version: DescriptorString,
     pub devices: Vec<PackageDevice>,
+    pub components: Vec<PackageComponent>,
 }
 
 impl Package {
@@ -121,8 +173,10 @@ impl Package {
         ))(buf)?;
 
         let f = |d| PackageDevice::parse(d, component_bitmap_length);
-
         let (r, devices) = length_count(le_u8, f)(r)?;
+
+        let f = |d| PackageComponent::parse(d);
+        let (r, components) = length_count(le_u16, f)(r)?;
 
         Ok((
             r,
@@ -130,6 +184,7 @@ impl Package {
                 identifier,
                 version,
                 devices,
+                components,
             },
         ))
     }
