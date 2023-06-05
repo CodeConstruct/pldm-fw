@@ -8,6 +8,7 @@
 mod mctp;
 mod pldm;
 mod pldm_fw;
+mod pldm_fw_pkg;
 
 use clap::{Parser, Subcommand};
 use enumset::{EnumSet, EnumSetType};
@@ -63,6 +64,19 @@ fn print_device_info(
     }
 }
 
+fn print_package(pkg: &pldm_fw_pkg::Package) {
+    println!("Package:");
+    println!("  Identifier:   {}", pkg.identifier);
+    println!("  Version:      {}", pkg.version);
+    println!("  Applicable devices:");
+    for (idx, dev) in pkg.devices.iter().enumerate() {
+        println!("   {:2}: {}", idx, dev.ids);
+        println!("       version:    {}", dev.version);
+        println!("       options:    0x{:x}", dev.option_flags);
+        println!("       components: {}", dev.components.as_index_str());
+    }
+}
+
 fn eid_parse(s: &str) -> Result<u8, String> {
     const HEX_PREFIX: &str = "0x";
     const HEX_PREFIX_LEN: usize = HEX_PREFIX.len();
@@ -79,32 +93,50 @@ fn eid_parse(s: &str) -> Result<u8, String> {
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    /// MCTP EID of device
-    #[clap(value_parser=eid_parse)]
-    eid: u8,
-
     #[command(subcommand)]
     command: Option<Command>,
 }
 
 #[derive(Subcommand, Debug)]
 enum Command {
-    Inventory,
-    Update,
+    Inventory {
+        /// MCTP EID of device
+        #[clap(value_parser=eid_parse)]
+        eid: u8,
+    },
+    Update {
+        /// MCTP EID of device
+        #[clap(value_parser=eid_parse)]
+        eid: u8,
+    },
+    PkgInfo {
+        file: String,
+    },
 }
 
 fn main() -> std::io::Result<()> {
     let args = Args::parse();
-    let ep = mctp::MctpEndpoint::new(args.eid)?;
-
-    let dev = pldm_fw::query_device_identifiers(&ep)?;
-    let params = pldm_fw::query_firmware_parameters(&ep)?;
 
     match args.command {
-        Some(Command::Inventory) | None => print_device_info(&dev, &params),
-        Some(Command::Update) => {
+        Some(Command::Inventory { eid }) => {
+            let ep = mctp::MctpEndpoint::new(eid)?;
+            let dev = pldm_fw::query_device_identifiers(&ep)?;
+            let params = pldm_fw::query_firmware_parameters(&ep)?;
+
+            print_device_info(&dev, &params)
+        }
+        Some(Command::Update { eid }) => {
+            let ep = mctp::MctpEndpoint::new(eid)?;
             let _ = pldm_fw::request_update(&ep);
             let _ = pldm_fw::cancel_update(&ep);
+        }
+        Some(Command::PkgInfo { file }) => {
+            let mut f = std::fs::File::open(file)?;
+            let pkg = pldm_fw_pkg::load_package(&mut f)?;
+            print_package(&pkg);
+        }
+        None => {
+            todo!();
         }
     }
 

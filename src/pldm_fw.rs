@@ -17,7 +17,9 @@ use nom::{
     branch::alt,
     bytes::complete::{tag, take},
     character::complete::{i32 as c_i32, u32 as c_u32},
-    combinator::{complete, map, map_parser, value},
+    combinator::{
+        all_consuming, complete, flat_map, map, map_parser, rest, value,
+    },
     multi::{count, length_count, length_value},
     number::complete::{le_u16, le_u32, le_u8},
     sequence::tuple,
@@ -86,7 +88,6 @@ pub fn parse_string<'a>(
 }
 
 // Where we have type, length and data all adjacent (and in that order)
-#[allow(dead_code)]
 pub fn parse_string_adjacent(buf: &[u8]) -> VResult<&[u8], DescriptorString> {
     let (r, (typ, len)) = tuple((le_u8, le_u8))(buf)?;
     parse_string(typ, len)(r)
@@ -94,24 +95,27 @@ pub fn parse_string_adjacent(buf: &[u8]) -> VResult<&[u8], DescriptorString> {
 
 impl Descriptor {
     pub fn parse_pcivid(buf: &[u8]) -> VResult<&[u8], Self> {
-        let (rest, id) = le_u16(buf)?;
-        Ok((rest, Self::PciVid(id)))
+        map(le_u16, Self::PciVid)(buf)
     }
 
-    pub fn parse_vendor(len: u16, buf: &[u8]) -> VResult<&[u8], Self> {
+    pub fn parse_vendor(buf: &[u8]) -> VResult<&[u8], Self> {
         // TODO: we're parsing the entire descriptor as bytes for now,
         // extract the title string in future.
-        let (r, d) = take(len)(buf)?;
-        Ok((r, Self::Vendor(DescriptorString::Bytes(d.to_vec()))))
+        map(rest, |d: &[u8]| {
+            Self::Vendor(DescriptorString::Bytes(d.to_vec()))
+        })(buf)
     }
 
     pub fn parse(buf: &[u8]) -> VResult<&[u8], Self> {
-        let (rem, (typ, len)) = tuple((le_u16, le_u16))(buf)?;
-        match typ {
-            0x0000 => Self::parse_pcivid(rem),
-            0xffff => Self::parse_vendor(len, rem),
-            _ => unimplemented!(),
-        }
+        let f = |(typ, len)| {
+            let g = match typ {
+                0x0000 => Self::parse_pcivid,
+                0xffff => Self::parse_vendor,
+                _ => unimplemented!(),
+            };
+            map_parser(take(len), all_consuming(g))
+        };
+        flat_map(tuple((le_u16, le_u16)), f)(buf)
     }
 }
 
