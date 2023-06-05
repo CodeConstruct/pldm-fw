@@ -61,7 +61,10 @@ impl fmt::Display for DescriptorString {
 #[derive(Debug)]
 pub enum Descriptor {
     PciVid(u16),
-    Vendor(DescriptorString),
+    Vendor {
+        title: Option<DescriptorString>,
+        data: Vec<u8>,
+    },
 }
 
 pub fn parse_string<'a>(
@@ -99,11 +102,17 @@ impl Descriptor {
     }
 
     pub fn parse_vendor(buf: &[u8]) -> VResult<&[u8], Self> {
-        // TODO: we're parsing the entire descriptor as bytes for now,
-        // extract the title string in future.
-        map(rest, |d: &[u8]| {
-            Self::Vendor(DescriptorString::Bytes(d.to_vec()))
-        })(buf)
+        // Attempt to parse with a proper title string; if not present just
+        // consume everything as byte data
+        let f1 = |(t, d): (_, &[u8])| Self::Vendor {
+            title: Some(t),
+            data: d.to_vec(),
+        };
+        let f2 = |d: &[u8]| Self::Vendor {
+            title: None,
+            data: d.to_vec(),
+        };
+        alt((map(tuple((parse_string_adjacent, rest)), f1), map(rest, f2)))(buf)
     }
 
     pub fn parse(buf: &[u8]) -> VResult<&[u8], Self> {
@@ -123,7 +132,18 @@ impl fmt::Display for Descriptor {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::PciVid(id) => write!(f, "pci-vid:{:04x}", id),
-            Self::Vendor(s) => write!(f, "vendor:{}", s),
+            Self::Vendor { title, data } => {
+                match title {
+                    Some(t) => write!(f, "vendor:{}", t)?,
+                    None => write!(f, "vendor:")?,
+                }
+                write!(f, "[")?;
+                for b in data {
+                    write!(f, "{:02x}", b)?;
+                }
+                write!(f, "]")?;
+                Ok(())
+            }
         }
     }
 }
