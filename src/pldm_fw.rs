@@ -26,6 +26,8 @@ use nom::{
     IResult,
 };
 
+use crate::pldm_fw_pkg;
+
 const PLDM_TYPE_FW: u8 = 5;
 
 //type VResult<I,O> = IResult<I, O, VerboseError<I>>;
@@ -534,4 +536,39 @@ pub fn cancel_update(ep: &MctpEndpoint) -> Result<()> {
     let rsp = pldm::pldm_xfer(ep, req)?;
     println!("cancel rsp: cc {:x}, data {:?}", rsp.cc, rsp.data);
     Ok(())
+}
+
+#[derive(Debug)]
+pub struct Update {}
+
+impl Update {
+    pub fn new(
+        dev: &DeviceIdentifiers,
+        fwp: &FirmwareParameters,
+        pkg: &pldm_fw_pkg::Package,
+    ) -> Result<Self> {
+        let fwdevs = pkg
+            .devices
+            .iter()
+            .filter(|d| &d.ids == dev)
+            .collect::<Vec<_>>();
+
+        if fwdevs.is_empty() {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "no matching devices",
+            ));
+        }
+
+        if fwdevs.len() != 1 {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "multiple matching devices",
+            ));
+        }
+
+        println!("{:?}", fwdevs.get(0));
+
+        Ok(Self {})
+    }
 }

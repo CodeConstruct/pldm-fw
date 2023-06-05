@@ -118,6 +118,7 @@ enum Command {
         /// MCTP EID of device
         #[clap(value_parser=eid_parse)]
         eid: u8,
+        file: String,
     },
     PkgInfo {
         file: String,
@@ -135,10 +136,18 @@ fn main() -> std::io::Result<()> {
 
             print_device_info(&dev, &params)
         }
-        Some(Command::Update { eid }) => {
+        Some(Command::Update { eid, file }) => {
+            let mut f = std::fs::File::open(file)?;
+            let pkg = pldm_fw_pkg::load_package(&mut f)?;
             let ep = mctp::MctpEndpoint::new(eid)?;
+            let dev = pldm_fw::query_device_identifiers(&ep)?;
+            let fwp = pldm_fw::query_firmware_parameters(&ep)?;
+            let update = pldm_fw::Update::new(&dev, &fwp, &pkg);
+            println!("update: {:?}", update);
+            /*
             let _ = pldm_fw::request_update(&ep);
             let _ = pldm_fw::cancel_update(&ep);
+            */
         }
         Some(Command::PkgInfo { file }) => {
             let mut f = std::fs::File::open(file)?;
