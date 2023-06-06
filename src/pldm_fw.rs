@@ -60,6 +60,23 @@ impl fmt::Display for DescriptorString {
     }
 }
 
+impl DescriptorString {
+    pub fn write_utf8_bytes(&self, v: &mut Vec<u8>) {
+        match self {
+            Self::String(s) => {
+                v.push(0x01);
+                v.push(s.len() as u8);
+                v.extend_from_slice(s.as_bytes());
+            }
+            Self::Bytes(b) => {
+                v.push(0x00);
+                v.push(b.len() as u8);
+                v.extend_from_slice(b);
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum Descriptor {
     PciVid(u16),
