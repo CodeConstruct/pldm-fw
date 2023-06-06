@@ -531,16 +531,17 @@ impl RequestUpdateResponse {
     }
 }
 
-pub fn request_update(ep: &MctpEndpoint) -> Result<RequestUpdateResponse> {
+pub fn request_update(
+    ep: &MctpEndpoint,
+    update: &Update,
+) -> Result<RequestUpdateResponse> {
     let mut req = pldm::PldmRequest::new(PLDM_TYPE_FW, 0x10);
 
     req.data.extend_from_slice(&XFER_SIZE.to_le_bytes());
     req.data.extend_from_slice(&1u16.to_le_bytes()); // NumberOfComponents
     req.data.extend_from_slice(&1u8.to_le_bytes()); // MaximumOutstandingTransferRequests
     req.data.extend_from_slice(&0u16.to_le_bytes()); // PackageDataLength
-    req.data.extend_from_slice(&1u8.to_le_bytes());
-    req.data.extend_from_slice(&4u8.to_le_bytes());
-    req.data.extend_from_slice("meep".as_bytes()); // component image version string
+    update.package.version.write_utf8_bytes(&mut req.data);
 
     let rsp = pldm::pldm_xfer(ep, req)?;
 
@@ -564,36 +565,132 @@ pub fn cancel_update(ep: &MctpEndpoint) -> Result<()> {
 }
 
 #[derive(Debug)]
-pub struct Update {}
+pub struct Update {
+    package: pldm_fw_pkg::Package,
+    components: Vec<usize>,
+}
 
 impl Update {
     pub fn new(
         dev: &DeviceIdentifiers,
         fwp: &FirmwareParameters,
-        pkg: &pldm_fw_pkg::Package,
+        pkg: pldm_fw_pkg::Package,
     ) -> Result<Self> {
-        let fwdevs = pkg
-            .devices
-            .iter()
-            .filter(|d| &d.ids == dev)
-            .collect::<Vec<_>>();
+        let components = {
+            let fwdevs = pkg
+                .devices
+                .iter()
+                .filter(|d| &d.ids == dev)
+                .collect::<Vec<_>>();
 
-        if fwdevs.is_empty() {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "no matching devices",
-            ));
-        }
+            if fwdevs.is_empty() {
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "no matching devices",
+                ));
+            }
 
-        if fwdevs.len() != 1 {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "multiple matching devices",
-            ));
-        }
+            if fwdevs.len() != 1 {
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "multiple matching devices",
+                ));
+            }
 
-        println!("{:?}", fwdevs.get(0));
+            fwdevs.first().unwrap().components.as_index_vec()
+        };
 
-        Ok(Self {})
+        Ok(Self {
+            package: pkg,
+            components,
+        })
     }
+}
+
+fn xfer_flags(idx: usize, len: usize) -> u8 {
+    let mut xfer_flags: u8 = 0x0;
+    if idx == 0 {
+        xfer_flags |= 0x1;
+    }
+    if idx == len - 1 {
+        xfer_flags |= 0x4;
+    }
+    if xfer_flags == 0 {
+        xfer_flags = 0x2;
+    }
+    xfer_flags
+}
+
+pub fn pass_component_table(ep: &MctpEndpoint, update: &Update) -> Result<()> {
+    let components = &update.components;
+    let len = components.len();
+
+    for (n, idx) in components.iter().enumerate() {
+        let component = update.package.components.get(*idx).unwrap();
+        let mut req = pldm::PldmRequest::new(PLDM_TYPE_FW, 0x13);
+
+        req.data.push(xfer_flags(n, len));
+        req.data.extend_from_slice(
+            &component.classification.as_u16().to_le_bytes(),
+        );
+        req.data.extend_from_slice(&component.identifier.to_le_bytes());
+
+        // todo: match index from fwp?
+        req.data.extend_from_slice(&0x0000u16.to_le_bytes());
+
+        req.data.extend_from_slice(&component.comparison_stamp.to_le_bytes());
+
+        component.version.write_utf8_bytes(&mut req.data);
+
+        println!("pct req: {:?}", req.data);
+
+        let rsp = pldm::pldm_xfer(ep, req)?;
+
+        println!("pct rsp: cc {}, data {:x?}", rsp.cc, rsp.data);
+    }
+
+    Ok(())
+}
+
+pub fn update_component(
+    ep: &MctpEndpoint,
+    component: &pldm_fw_pkg::PackageComponent,
+) -> Result<()> {
+    let mut req = pldm::PldmRequest::new(PLDM_TYPE_FW, 0x14);
+
+    req.data.extend_from_slice(&component.classification
+                              .as_u16().to_le_bytes());
+    req.data.extend_from_slice(&component.identifier.to_le_bytes());
+
+    // todo: classification index: match index from fwp?
+    req.data.extend_from_slice(&0x00u8.to_le_bytes());
+
+    req.data.extend_from_slice(&component.comparison_stamp.to_le_bytes());
+
+    let sz: u32 = component.file_size as u32;
+    req.data.extend_from_slice(&sz.to_le_bytes());
+
+    // todo: flags: request forced update?
+    req.data.extend_from_slice(&0u32.to_le_bytes());
+
+    component.version.write_utf8_bytes(&mut req.data);
+
+    println!("uc req: {:?}", req.data);
+
+    let rsp = pldm::pldm_xfer(ep, req)?;
+
+    println!("uc rsp: cc {}, data {:x?}", rsp.cc, rsp.data);
+
+    Ok(())
+}
+
+pub fn update_components(ep: &MctpEndpoint, update: &Update) -> Result<()> {
+    let components = &update.components;
+
+    for idx in components {
+        let component = update.package.components.get(*idx).unwrap();
+        update_component(&ep, component)?;
+    }
+
+    Ok(())
 }
