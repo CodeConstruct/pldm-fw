@@ -142,8 +142,8 @@ fn main() -> std::io::Result<()> {
             print_device_info(&dev, &params)
         }
         Some(Command::Update { eid, file }) => {
-            let mut f = std::fs::File::open(file)?;
-            let pkg = pldm_fw_pkg::load_package(&mut f)?;
+            let f = std::fs::File::open(file)?;
+            let pkg = pldm_fw_pkg::Package::parse(f)?;
             let ep = mctp::MctpEndpoint::new(eid)?;
             let dev = pldm_fw::query_device_identifiers(&ep)?;
             let fwp = pldm_fw::query_firmware_parameters(&ep)?;
@@ -162,8 +162,8 @@ fn main() -> std::io::Result<()> {
             let _ = pldm_fw::cancel_update(&ep);
         }
         Some(Command::PkgInfo { file }) => {
-            let mut f = std::fs::File::open(file)?;
-            let pkg = pldm_fw_pkg::load_package(&mut f)?;
+            let f = std::fs::File::open(file)?;
+            let pkg = pldm_fw_pkg::Package::parse(f)?;
             print_package(&pkg);
         }
         None => {

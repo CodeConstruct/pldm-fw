@@ -13,7 +13,7 @@ use nom::{
     sequence::tuple,
     IResult,
 };
-use std::io::{Read, Result};
+use std::io::{self, BufReader, Read, Result};
 use uuid::Uuid;
 
 use crate::pldm_fw::{
@@ -159,50 +159,65 @@ pub struct Package {
     pub version: DescriptorString,
     pub devices: Vec<PackageDevice>,
     pub components: Vec<PackageComponent>,
+    pub reader: BufReader<std::fs::File>,
 }
 
 impl Package {
-    pub fn parse(buf: &[u8]) -> VResult<&[u8], Self> {
-        let (
-            r,
-            (
-                identifier,
-                _hdr_format,
-                _hdr_size,
-                _release_date_time,
-                component_bitmap_length,
-                version,
-            ),
-        ) = tuple((
+    pub fn parse(f: std::fs::File) -> Result<Self> {
+        const HDR_INIT_SIZE: usize = 16 + 1 + 2;
+        let mut reader = BufReader::new(f);
+        let mut init = [0u8; HDR_INIT_SIZE];
+        reader.read_exact(&mut init)?;
+
+        let errfn =
+            |_| io::Error::new(io::ErrorKind::Other, "package parse error");
+
+        let (_, (
+            identifier,
+            _hdr_format,
+            hdr_size,
+        )) = all_consuming(tuple((
             map_res(take(16usize), Uuid::from_slice),
             le_u8,
             le_u16,
-            take(13usize),
-            le_u16,
-            parse_string_adjacent,
-        ))(buf)?;
+        )))(&init).map_err(errfn)?;
+
+        let mut hdr_usize = hdr_size as usize;
+        if hdr_usize < HDR_INIT_SIZE {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "package parse error",
+            ));
+        }
+
+        hdr_usize -= HDR_INIT_SIZE;
+
+        let mut buf = Vec::<u8>::new();
+        buf.resize(hdr_usize, 0);
+        reader.read_exact(&mut buf)?;
+
+        let (r, (
+                _release_date_time,
+                component_bitmap_length,
+                version
+        )) = tuple((
+                take(13usize),
+                le_u16,
+                parse_string_adjacent,
+        ))(&buf).map_err(errfn)?;
 
         let f = |d| PackageDevice::parse(d, component_bitmap_length);
-        let (r, devices) = length_count(le_u8, f)(r)?;
+        let (r, devices) = length_count(le_u8, f)(r).map_err(errfn)?;
 
         let f = |d| PackageComponent::parse(d);
-        let (r, components) = length_count(le_u16, f)(r)?;
+        let (_, components) = length_count(le_u16, f)(r).map_err(errfn)?;
 
-        Ok((
-            r,
-            Package {
-                identifier,
-                version,
-                devices,
-                components,
-            },
-        ))
+        Ok(Package {
+            identifier,
+            version,
+            devices,
+            components,
+            reader,
+        })
     }
-}
-
-pub fn load_package(f: &mut std::fs::File) -> Result<Package> {
-    let mut v = Vec::new();
-    f.read_to_end(&mut v)?;
-    let (_, pkg) = Package::parse(&v).expect("Can't parse package");
-    Ok(pkg)
 }
