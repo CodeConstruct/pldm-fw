@@ -26,6 +26,7 @@ struct sockaddr_mctp {
 
 pub const MCTP_TAG_OWNER: u8 = 0x08;
 pub const MCTP_NET_ANY: u32 = 0x00;
+pub const MCTP_ADDR_ANY: u8 = 0xff;
 
 pub struct MctpSocket(RawFd);
 pub struct MctpSockAddr(sockaddr_mctp);
@@ -129,6 +130,20 @@ impl MctpSocket {
             Ok(rc as usize)
         }
     }
+
+    pub fn bind(&self, addr: &MctpSockAddr) -> Result<()> {
+        let (addr_ptr, addr_len) = addr.as_raw();
+
+        let rc = unsafe {
+            libc::bind(self.0, addr_ptr, addr_len)
+        };
+
+        if rc < 0 {
+            Err(Error::last_os_error())
+        } else {
+            Ok(())
+        }
+    }
 }
 
 pub struct MctpEndpoint {
@@ -144,17 +159,22 @@ impl MctpEndpoint {
         })
     }
 
-    pub fn send(&self, typ: u8, buf: &[u8]) -> Result<()> {
-        let addr = MctpSockAddr::new(self.eid, typ, MCTP_TAG_OWNER);
+    pub fn send(&self, typ: u8, tag: u8, buf: &[u8]) -> Result<()> {
+        let addr = MctpSockAddr::new(self.eid, typ, tag);
         self.sock.sendto(&buf, &addr)?;
         Ok(())
     }
 
-    pub fn recv(&self, buf: &mut [u8]) -> Result<usize> {
+    pub fn recv(&self, buf: &mut [u8]) -> Result<(usize, u8)> {
         let (sz, addr) = self.sock.recvfrom(buf)?;
         if addr.0.smctp_addr != self.eid {
             return Err(Error::new(ErrorKind::Other, "invalid sender"));
         }
-        Ok(sz)
+        Ok((sz, addr.0.smctp_tag))
+    }
+
+    pub fn bind(&self, typ: u8) -> Result<()> {
+        let addr = MctpSockAddr::new(MCTP_ADDR_ANY, typ, MCTP_TAG_OWNER);
+        self.sock.bind(&addr)
     }
 }
