@@ -287,6 +287,16 @@ impl From<u16> for ComponentClassification {
     }
 }
 
+impl ComponentClassification {
+    fn as_u16(&self) -> u16 {
+        match self {
+            Self::Unknown => 0x0000,
+            Self::Other => 0x0001,
+            Self::Firmware => 0x000a,
+        }
+    }
+}
+
 #[derive(EnumSetType, Debug)]
 pub enum ActivationMethod {
     PendingComponentImageSet = 7,
