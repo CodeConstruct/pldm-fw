@@ -489,18 +489,16 @@ const XFER_SIZE: usize = 16 * 1024;
 pub struct RequestUpdateResponse {
     pub fd_metadata_len: u16,
     pub fd_will_sent_gpd: u8,
-    pub gpd_max_xfer_size: u16,
 }
 
 impl RequestUpdateResponse {
     pub fn parse(buf: &[u8]) -> VResult<&[u8], Self> {
-        let (r, t) = tuple((le_u16, le_u8, le_u16))(buf)?;
+        let (r, t) = tuple((le_u16, le_u8))(buf)?;
         Ok((
             r,
             RequestUpdateResponse {
                 fd_metadata_len: t.0,
                 fd_will_sent_gpd: t.1,
-                gpd_max_xfer_size: t.2,
             },
         ))
     }
