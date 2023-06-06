@@ -56,6 +56,16 @@ impl<'a> ComponentBitmap {
         }
         s
     }
+
+    pub fn as_index_vec(&self) -> Vec<usize> {
+        let mut v = Vec::new();
+        for i in 0usize..self.n_bits {
+            if self.bit(i) {
+                v.push(i)
+            }
+        }
+        v
+    }
 }
 
 #[derive(Debug)]
