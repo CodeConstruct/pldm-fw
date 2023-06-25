@@ -549,8 +549,6 @@ pub fn request_update(
         return Err(io::Error::new(io::ErrorKind::Other, "PLDM error"));
     }
 
-    println!("request rsp: {:?}", rsp.data);
-
     let res = complete(RequestUpdateResponse::parse)(rsp.data.as_slice());
 
     res.map(|(_, d)| d)
@@ -642,11 +640,15 @@ pub fn pass_component_table(ep: &MctpEndpoint, update: &Update) -> Result<()> {
 
         component.version.write_utf8_bytes(&mut req.data);
 
-        println!("pct req: {:?}", req.data);
-
         let rsp = pldm::pldm_xfer(ep, req)?;
 
-        println!("pct rsp: cc {}, data {:x?}", rsp.cc, rsp.data);
+        if rsp.cc != 0 {
+            println!("PassComponentTable command failed, cc 0x{:02x}", rsp.cc);
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "PLDM(PCT) error",
+            ));
+        }
     }
 
     Ok(())
@@ -675,11 +677,17 @@ pub fn update_component(
 
     component.version.write_utf8_bytes(&mut req.data);
 
-    println!("uc req: {:?}", req.data);
+    println!("update component req: {:02x?}", req);
 
     let rsp = pldm::pldm_xfer(ep, req)?;
 
-    println!("uc rsp: cc {}, data {:x?}", rsp.cc, rsp.data);
+    if rsp.cc != 0 {
+        println!("UpdateComponent command failed: cc 0x{:02x}", rsp.cc);
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            "PLDM(UC) error",
+        ));
+    }
 
     Ok(())
 }
