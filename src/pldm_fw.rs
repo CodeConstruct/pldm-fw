@@ -571,7 +571,7 @@ pub struct Update {
 impl Update {
     pub fn new(
         dev: &DeviceIdentifiers,
-        fwp: &FirmwareParameters,
+        _fwp: &FirmwareParameters,
         pkg: pldm_fw_pkg::Package,
     ) -> Result<Self> {
         let components = {
@@ -656,6 +656,7 @@ pub fn pass_component_table(ep: &MctpEndpoint, update: &Update) -> Result<()> {
 
 pub fn update_component(
     ep: &MctpEndpoint,
+    package: &pldm_fw_pkg::Package,
     component: &pldm_fw_pkg::PackageComponent,
 ) -> Result<()> {
     let mut req = pldm::PldmRequest::new(PLDM_TYPE_FW, 0x14);
@@ -689,15 +690,99 @@ pub fn update_component(
         ));
     }
 
+    loop {
+        // we should be in update mode, handle incoming data requests
+        let fw_req = pldm::pldm_rx_req(ep)?;
+
+        match fw_req.cmd {
+            0x15 => {
+                /* Request Firmware Data */
+                let res: IResult<_, _> = all_consuming(tuple((le_u32, le_u32)))(
+                    fw_req.data.as_slice(),
+                );
+
+                let (_, (offset, len)) = res.map_err(|_e| {
+                    io::Error::new(io::ErrorKind::Other, "parse error")
+                })?;
+
+                println!(
+                    "Data request: offset 0x{:08x}, len 0x{:08x}",
+                    offset, len
+                );
+
+                let mut buf = Vec::new();
+                buf.resize(len as usize, 0u8);
+
+                package.read_component(component, offset, &mut buf)?;
+
+                let mut fw_resp = fw_req.response();
+
+                fw_resp.cc = 0;
+                fw_resp.data = buf;
+
+                pldm::pldm_tx_resp(ep, &fw_resp)?;
+            }
+            0x16 => {
+                /* Transfer Complete */
+                let res = fw_req.data[0];
+                if res == 0 {
+                    println!("firmware transfer complete");
+                } else {
+                    println!("fimware transfer error: 0x{:02x}", res);
+                }
+                let mut fw_resp = fw_req.response();
+                fw_resp.cc = 0;
+                pldm::pldm_tx_resp(ep, &fw_resp)?;
+                if res != 0 {
+                    return Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        "PLDM(TC) error"),
+                    );
+                }
+                break;
+            }
+            _ => {
+                println!("unknown req during transfer");
+                println!(" {:?}", fw_req);
+
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "unexpected command during update",
+                ));
+            }
+        }
+    }
+
+    /* Verify results.. */
+    let fw_req = pldm::pldm_rx_req(ep)?;
+    match fw_req.cmd {
+        0x17 => {
+            let res = fw_req.data[0];
+            println!("fimware verify result: 0x{:02x}", res);
+        }
+        _ => {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "unexpected command during verify",
+            ));
+        }
+    }
+    let mut fw_resp = fw_req.response();
+    fw_resp.cc = 0;
+    pldm::pldm_tx_resp(ep, &fw_resp)?;
+
     Ok(())
 }
 
-pub fn update_components(ep: &MctpEndpoint, update: &Update) -> Result<()> {
-    let components = &update.components;
+pub fn update_components(ep: &MctpEndpoint, update: &mut Update) -> Result<()> {
+    // We'll need to receive incoming data requests, so bind() now.
+    ep.bind(pldm::MCTP_TYPE_PLDM)?;
+
+    let components = update.components.clone();
 
     for idx in components {
-        let component = update.package.components.get(*idx).unwrap();
-        update_component(&ep, component)?;
+        let component = update.package.components.get(idx).unwrap();
+        update_component(&ep, &update.package, component)?;
     }
 
     Ok(())

@@ -147,12 +147,12 @@ fn main() -> std::io::Result<()> {
             let ep = mctp::MctpEndpoint::new(eid)?;
             let dev = pldm_fw::query_device_identifiers(&ep)?;
             let fwp = pldm_fw::query_firmware_parameters(&ep)?;
-            let update = pldm_fw::Update::new(&dev, &fwp, pkg)?;
+            let mut update = pldm_fw::Update::new(&dev, &fwp, pkg)?;
             println!("update: {:#?}", update);
 
             let _ = pldm_fw::request_update(&ep, &update)?;
             pldm_fw::pass_component_table(&ep, &update)?;
-            pldm_fw::update_components(&ep, &update)?;
+            pldm_fw::update_components(&ep, &mut update)?;
             /*
             let _ = pldm_fw::cancel_update(&ep);
             */
