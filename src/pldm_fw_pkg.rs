@@ -14,6 +14,7 @@ use nom::{
     IResult,
 };
 use std::io::{self, BufReader, Read, Result};
+use std::os::unix::fs::FileExt;
 use uuid::Uuid;
 
 use crate::pldm_fw::{
@@ -159,13 +160,16 @@ pub struct Package {
     pub version: DescriptorString,
     pub devices: Vec<PackageDevice>,
     pub components: Vec<PackageComponent>,
-    pub reader: BufReader<std::fs::File>,
+    file: std::fs::File,
 }
 
 impl Package {
-    pub fn parse(f: std::fs::File) -> Result<Self> {
+    pub fn parse(file: std::fs::File) -> Result<Self> {
+        // just enough length to retrieve the header size field, after which
+        // we can parse the rest of the header.
         const HDR_INIT_SIZE: usize = 16 + 1 + 2;
-        let mut reader = BufReader::new(f);
+
+        let mut reader = BufReader::new(&file);
         let mut init = [0u8; HDR_INIT_SIZE];
         reader.read_exact(&mut init)?;
 
@@ -217,7 +221,17 @@ impl Package {
             version,
             devices,
             components,
-            reader,
+            file,
         })
+    }
+
+    pub fn read_component(
+        &self,
+        component: &PackageComponent,
+        offset: u32,
+        buf: &mut [u8],
+    ) -> Result<usize> {
+        let file_offset = offset as u64 + component.file_offset as u64;
+        self.file.read_at(buf, file_offset)
     }
 }
