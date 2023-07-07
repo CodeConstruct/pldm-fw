@@ -759,6 +759,12 @@ pub fn update_component(
         0x17 => {
             let res = fw_req.data[0];
             println!("fimware verify result: 0x{:02x}", res);
+            if res != 0 {
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "verify failure",
+                ));
+            }
         }
         _ => {
             return Err(io::Error::new(
@@ -767,6 +773,31 @@ pub fn update_component(
             ));
         }
     }
+    let mut fw_resp = fw_req.response();
+    fw_resp.cc = 0;
+    pldm::pldm_tx_resp(ep, &fw_resp)?;
+
+    /* Apply */
+    let fw_req = pldm::pldm_rx_req(ep)?;
+    match fw_req.cmd {
+        0x18 => {
+            let res = fw_req.data[0];
+            println!("fimware apply result: 0x{:02x}", res);
+            if res != 0 {
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "apply failure",
+                ));
+            }
+        }
+        _ => {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "unexpected command during apply",
+            ));
+        }
+    }
+
     let mut fw_resp = fw_req.response();
     fw_resp.cc = 0;
     pldm::pldm_tx_resp(ep, &fw_resp)?;
