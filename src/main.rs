@@ -134,8 +134,13 @@ struct UpdateCommand {
     /// MCTP EID of device
     #[argh(positional, from_str_fn(eid_parse))]
     eid: u8,
+
     #[argh(positional)]
     file: String,
+
+    /// force a specific device from this package (by index)
+    #[argh(option)]
+    force_device: Option<usize>,
 }
 
 #[derive(FromArgs, Debug)]
@@ -170,7 +175,12 @@ fn main() -> std::io::Result<()> {
             let ep = mctp::MctpEndpoint::new(u.eid)?;
             let dev = pldm_fw::query_device_identifiers(&ep)?;
             let fwp = pldm_fw::query_firmware_parameters(&ep)?;
-            let mut update = pldm_fw::Update::new(&dev, &fwp, pkg)?;
+            let mut update = pldm_fw::Update::new(
+                &dev,
+                &fwp,
+                pkg,
+                u.force_device,
+            )?;
             println!("update: {:#?}", update);
 
             let _ = pldm_fw::request_update(&ep, &update)?;

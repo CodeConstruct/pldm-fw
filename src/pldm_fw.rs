@@ -573,30 +573,36 @@ impl Update {
         dev: &DeviceIdentifiers,
         _fwp: &FirmwareParameters,
         pkg: pldm_fw_pkg::Package,
+        force_device: Option<usize>,
     ) -> Result<Self> {
-        let components = {
-            let fwdevs = pkg
-                .devices
-                .iter()
-                .filter(|d| &d.ids == dev)
-                .collect::<Vec<_>>();
+        let dev = match force_device {
+            Some(n) => &pkg.devices[n],
+            None => {
+                let fwdevs = pkg
+                    .devices
+                    .iter()
+                    .filter(|d| &d.ids == dev)
+                    .collect::<Vec<_>>();
 
-            if fwdevs.is_empty() {
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    "no matching devices",
-                ));
+                if fwdevs.is_empty() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        "no matching devices",
+                    ));
+                }
+
+                if fwdevs.len() != 1 {
+                    return Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        "multiple matching devices",
+                    ));
+                }
+
+                *fwdevs.first().unwrap()
             }
-
-            if fwdevs.len() != 1 {
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    "multiple matching devices",
-                ));
-            }
-
-            fwdevs.first().unwrap().components.as_index_vec()
         };
+
+        let components = dev.components.as_index_vec();
 
         Ok(Self {
             package: pkg,
