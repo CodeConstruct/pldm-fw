@@ -10,7 +10,7 @@ mod pldm;
 mod pldm_fw;
 mod pldm_fw_pkg;
 
-use clap::{Parser, Subcommand};
+use argh::FromArgs;
 use enumset::{EnumSet, EnumSetType};
 use std::fmt::Write;
 
@@ -100,51 +100,74 @@ fn eid_parse(s: &str) -> Result<u8, String> {
     result.map_err(|e| e.to_string())
 }
 
-#[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[derive(FromArgs, Debug)]
+#[argh(description = "PLDM update utility")]
 struct Args {
-    #[command(subcommand)]
-    command: Option<Command>,
+    #[argh(subcommand)]
+    command: Command,
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(FromArgs, Debug)]
+#[argh(subcommand)]
 enum Command {
-    Inventory {
-        /// MCTP EID of device
-        #[clap(value_parser=eid_parse)]
-        eid: u8,
-    },
-    Update {
-        /// MCTP EID of device
-        #[clap(value_parser=eid_parse)]
-        eid: u8,
-        file: String,
-    },
-    Cancel {
-        /// MCTP EID of device
-        #[clap(value_parser=eid_parse)]
-        eid: u8,
-    },
-    PkgInfo {
-        file: String,
-    },
+    Inventory(InventoryCommand),
+    Update(UpdateCommand),
+    Cancel(CancelCommand),
+    PkgInfo(PkgInfoCommand),
+}
+
+#[derive(FromArgs, Debug)]
+#[argh(subcommand, name = "inventory", description = "Query FD inventory")]
+struct InventoryCommand {
+    /// MCTP EID of device
+    #[argh(positional, from_str_fn(eid_parse))]
+    eid: u8,
+}
+
+#[derive(FromArgs, Debug)]
+#[argh(
+    subcommand,
+    name = "update",
+    description = "Update FD from a package file"
+)]
+struct UpdateCommand {
+    /// MCTP EID of device
+    #[argh(positional, from_str_fn(eid_parse))]
+    eid: u8,
+    #[argh(positional)]
+    file: String,
+}
+
+#[derive(FromArgs, Debug)]
+#[argh(subcommand, name = "cancel", description = "Cancel ongoing update")]
+struct CancelCommand {
+    /// MCTP EID of device
+    #[argh(positional, from_str_fn(eid_parse))]
+    eid: u8,
+}
+
+#[derive(FromArgs, Debug)]
+#[argh(subcommand, name = "pkg-info", description = "Query package contents")]
+struct PkgInfoCommand {
+    #[argh(positional)]
+    file: String,
 }
 
 fn main() -> std::io::Result<()> {
-    let args = Args::parse();
+    let args: Args = argh::from_env();
 
     match args.command {
-        Some(Command::Inventory { eid }) => {
-            let ep = mctp::MctpEndpoint::new(eid)?;
+        Command::Inventory(i) => {
+            let ep = mctp::MctpEndpoint::new(i.eid)?;
             let dev = pldm_fw::query_device_identifiers(&ep)?;
             let params = pldm_fw::query_firmware_parameters(&ep)?;
 
             print_device_info(&dev, &params)
         }
-        Some(Command::Update { eid, file }) => {
-            let f = std::fs::File::open(file)?;
+        Command::Update(u) => {
+            let f = std::fs::File::open(u.file)?;
             let pkg = pldm_fw_pkg::Package::parse(f)?;
-            let ep = mctp::MctpEndpoint::new(eid)?;
+            let ep = mctp::MctpEndpoint::new(u.eid)?;
             let dev = pldm_fw::query_device_identifiers(&ep)?;
             let fwp = pldm_fw::query_firmware_parameters(&ep)?;
             let mut update = pldm_fw::Update::new(&dev, &fwp, pkg)?;
@@ -157,17 +180,14 @@ fn main() -> std::io::Result<()> {
             let _ = pldm_fw::cancel_update(&ep);
             */
         }
-        Some(Command::Cancel { eid }) => {
-            let ep = mctp::MctpEndpoint::new(eid)?;
+        Command::Cancel(c) => {
+            let ep = mctp::MctpEndpoint::new(c.eid)?;
             let _ = pldm_fw::cancel_update(&ep);
         }
-        Some(Command::PkgInfo { file }) => {
-            let f = std::fs::File::open(file)?;
+        Command::PkgInfo(p) => {
+            let f = std::fs::File::open(p.file)?;
             let pkg = pldm_fw_pkg::Package::parse(f)?;
             print_package(&pkg);
-        }
-        None => {
-            todo!();
         }
     }
 
