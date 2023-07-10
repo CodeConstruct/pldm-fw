@@ -148,9 +148,27 @@ impl fmt::Display for Descriptor {
     }
 }
 
+impl PartialEq for Descriptor {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Vendor { data: s, .. }, Self::Vendor { data: o, .. }) => {
+                s == o
+            }
+            (Self::PciVid(s), Self::PciVid(o)) => s == o,
+            _ => false,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct DeviceIdentifiers {
     pub ids: Vec<Descriptor>,
+}
+
+impl PartialEq for DeviceIdentifiers {
+    fn eq(&self, other: &Self) -> bool {
+        self.ids == other.ids
+    }
 }
 
 impl DeviceIdentifiers {
