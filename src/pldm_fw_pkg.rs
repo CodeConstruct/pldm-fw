@@ -37,6 +37,8 @@ impl PldmPackageError {
     }
 }
 
+impl std::error::Error for PldmPackageError {}
+
 impl From<std::io::Error> for PldmPackageError {
     fn from(e: std::io::Error) -> Self {
         Self::Io(e)

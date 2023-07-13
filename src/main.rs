@@ -10,6 +10,7 @@ mod pldm;
 mod pldm_fw;
 mod pldm_fw_pkg;
 
+use anyhow::Context;
 use argh::FromArgs;
 use enumset::{EnumSet, EnumSetType};
 use std::fmt::Write;
@@ -87,6 +88,16 @@ fn print_package(pkg: &pldm_fw_pkg::Package) {
     }
 }
 
+fn open_package(fname: String) -> anyhow::Result<pldm_fw_pkg::Package> {
+    let f = std::fs::File::open(&fname)
+        .with_context(|| format!("Can't open PLDM package {}", fname))?;
+
+    let pkg = pldm_fw_pkg::Package::parse(f)
+        .with_context(|| format!("Can't parse PLDM package {}", fname))?;
+
+    Ok(pkg)
+}
+
 fn eid_parse(s: &str) -> Result<u8, String> {
     const HEX_PREFIX: &str = "0x";
     const HEX_PREFIX_LEN: usize = HEX_PREFIX.len();
@@ -158,7 +169,7 @@ struct PkgInfoCommand {
     file: String,
 }
 
-fn main() -> std::io::Result<()> {
+fn main() -> anyhow::Result<()> {
     let args: Args = argh::from_env();
 
     match args.command {
@@ -170,9 +181,7 @@ fn main() -> std::io::Result<()> {
             print_device_info(&dev, &params)
         }
         Command::Update(u) => {
-            let f = std::fs::File::open(u.file)?;
-            let pkg = pldm_fw_pkg::Package::parse(f)
-                .expect("can't parse PLDM package");
+            let pkg = open_package(u.file)?;
             let ep = mctp::MctpEndpoint::new(u.eid)?;
             let dev = pldm_fw::query_device_identifiers(&ep)?;
             let fwp = pldm_fw::query_firmware_parameters(&ep)?;
@@ -196,9 +205,7 @@ fn main() -> std::io::Result<()> {
             let _ = pldm_fw::cancel_update(&ep);
         }
         Command::PkgInfo(p) => {
-            let f = std::fs::File::open(p.file)?;
-            let pkg = pldm_fw_pkg::Package::parse(f)
-                .expect("Can't parse PLDM package");
+            let pkg = open_package(p.file)?;
             print_package(&pkg);
         }
     }
