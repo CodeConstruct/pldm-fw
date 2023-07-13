@@ -229,7 +229,11 @@ impl Package {
 
         let mut buf = Vec::<u8>::new();
         buf.resize(hdr_usize, 0);
-        reader.read_exact(&mut buf)?;
+        reader.read_exact(&mut buf).map_err(|_| {
+            PldmPackageError::new_format(
+                "reported header size is larger than file",
+            )
+        })?;
 
         let (r, (
                 _release_date_time,
