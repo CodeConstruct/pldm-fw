@@ -171,7 +171,8 @@ fn main() -> std::io::Result<()> {
         }
         Command::Update(u) => {
             let f = std::fs::File::open(u.file)?;
-            let pkg = pldm_fw_pkg::Package::parse(f)?;
+            let pkg = pldm_fw_pkg::Package::parse(f)
+                .expect("can't parse PLDM package");
             let ep = mctp::MctpEndpoint::new(u.eid)?;
             let dev = pldm_fw::query_device_identifiers(&ep)?;
             let fwp = pldm_fw::query_firmware_parameters(&ep)?;
@@ -196,7 +197,8 @@ fn main() -> std::io::Result<()> {
         }
         Command::PkgInfo(p) => {
             let f = std::fs::File::open(p.file)?;
-            let pkg = pldm_fw_pkg::Package::parse(f)?;
+            let pkg = pldm_fw_pkg::Package::parse(f)
+                .expect("Can't parse PLDM package");
             print_package(&pkg);
         }
     }

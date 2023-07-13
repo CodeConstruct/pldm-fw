@@ -11,9 +11,9 @@ use nom::{
     multi::{count, length_count},
     number::complete::{le_u16, le_u32, le_u8},
     sequence::tuple,
-    IResult,
+    Finish, IResult,
 };
-use std::io::{self, BufReader, Read, Result};
+use std::io::{BufReader, Read};
 use std::os::unix::fs::FileExt;
 use uuid::Uuid;
 
@@ -22,6 +22,37 @@ use crate::pldm_fw::{
 };
 
 type VResult<I, O> = IResult<I, O>;
+
+#[derive(Debug)]
+pub enum PldmPackageError {
+    Io(std::io::Error),
+    // TODO: would be nice to extract this directly from a nom ParseError,
+    // including Context...
+    Format(String),
+}
+
+impl PldmPackageError {
+    fn new_format(s: &str) -> Self {
+        Self::Format(s.into())
+    }
+}
+
+impl From<std::io::Error> for PldmPackageError {
+    fn from(e: std::io::Error) -> Self {
+        Self::Io(e)
+    }
+}
+
+impl std::fmt::Display for PldmPackageError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io(e) => write!(f, "IO error: {e}"),
+            Self::Format(e) => write!(f, "PLDM format error: {e}"),
+        }
+    }
+}
+
+type Result<T> = std::result::Result<T, PldmPackageError>;
 
 #[derive(Debug)]
 pub struct ComponentBitmap {
@@ -173,25 +204,23 @@ impl Package {
         let mut init = [0u8; HDR_INIT_SIZE];
         reader.read_exact(&mut init)?;
 
-        let errfn =
-            |_| io::Error::new(io::ErrorKind::Other, "package parse error");
-
         let (_, (
             identifier,
             _hdr_format,
             hdr_size,
         )) = all_consuming(tuple((
-            map_res(take(16usize), Uuid::from_slice),
+            map_res(
+                take::<_, _, nom::error::Error<_>>(16usize),
+                Uuid::from_slice,
+            ),
             le_u8,
             le_u16,
-        )))(&init).map_err(errfn)?;
+        )))(&init)
+        .map_err(|_| PldmPackageError::new_format("can't parse header"))?;
 
         let mut hdr_usize = hdr_size as usize;
         if hdr_usize < HDR_INIT_SIZE {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "package parse error",
-            ));
+            return Err(PldmPackageError::new_format("invalid header size"));
         }
 
         hdr_usize -= HDR_INIT_SIZE;
@@ -208,13 +237,19 @@ impl Package {
                 take(13usize),
                 le_u16,
                 parse_string_adjacent,
-        ))(&buf).map_err(errfn)?;
+        ))(&buf).finish()
+            .map_err(|_| PldmPackageError::new_format("can't parse header"))?;
 
         let f = |d| PackageDevice::parse(d, component_bitmap_length);
-        let (r, devices) = length_count(le_u8, f)(r).map_err(errfn)?;
+        let (r, devices) = length_count(le_u8, f)(r)
+            .finish()
+            .map_err(|_| PldmPackageError::new_format("can't parse devices"))?;
 
         let f = |d| PackageComponent::parse(d);
-        let (_, components) = length_count(le_u16, f)(r).map_err(errfn)?;
+        let (_, components) =
+            length_count(le_u16, f)(r).finish().map_err(|_| {
+                PldmPackageError::new_format("can't parse components")
+            })?;
 
         Ok(Package {
             identifier,
@@ -230,8 +265,8 @@ impl Package {
         component: &PackageComponent,
         offset: u32,
         buf: &mut [u8],
-    ) -> Result<usize> {
+    ) -> std::io::Result<usize> {
         let file_offset = offset as u64 + component.file_offset as u64;
-        self.file.read_at(buf, file_offset)
+        Ok(self.file.read_at(buf, file_offset)?)
     }
 }
