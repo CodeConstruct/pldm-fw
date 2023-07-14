@@ -5,12 +5,53 @@
  * Copyright (c) 2023 Code Construct
  */
 
-use std::io::{self, Result};
-
 use crate::mctp::{self, MctpEndpoint};
 
 pub const MCTP_TYPE_PLDM: u8 = 0x01;
 pub const PLDM_MAX_MSGSIZE: usize = 1024;
+
+#[derive(Debug)]
+pub enum PldmError {
+    Io(std::io::Error),
+    Protocol(String),
+    Command(u8, String),
+    Update(String),
+}
+
+impl PldmError {
+    pub fn cmd_err(cc: u8, s: &str) -> Self {
+        Self::Command(cc, s.into())
+    }
+
+    pub fn proto_err(s: &str) -> Self {
+        Self::Protocol(s.into())
+    }
+
+    pub fn update_err(s: &str) -> Self {
+        Self::Update(s.into())
+    }
+}
+
+impl From<std::io::Error> for PldmError {
+    fn from(e: std::io::Error) -> Self {
+        Self::Io(e)
+    }
+}
+
+impl std::error::Error for PldmError {}
+
+impl std::fmt::Display for PldmError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io(e) => write!(f, "IO error: {e}"),
+            Self::Protocol(e) => write!(f, "PLDM protocol error: {e}"),
+            Self::Command(cc, e) => write!(f, "PLDM command failure ({cc}): {e}"),
+            Self::Update(e) => write!(f, "PLDM update error: {e}"),
+        }
+    }
+}
+
+pub(crate) type Result<T> = std::result::Result<T, PldmError>;
 
 #[derive(Debug)]
 pub struct PldmRequest {
@@ -34,10 +75,7 @@ impl PldmRequest {
 
     pub fn from_buf(data: &[u8]) -> Result<Self> {
         if data.len() < 3 {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "request too short",
-            ));
+            panic!("request too short");
         }
 
         let iid = data[0] & 0x1f;

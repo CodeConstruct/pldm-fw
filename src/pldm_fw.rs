@@ -8,7 +8,7 @@
 use crate::mctp::MctpEndpoint;
 use crate::pldm;
 use core::fmt;
-use std::io::{self, Result};
+use std::io;
 
 use enumset::{EnumSet, EnumSetType};
 use itertools::Itertools;
@@ -27,6 +27,7 @@ use nom::{
 };
 
 use crate::pldm_fw_pkg;
+use crate::pldm::{Result, PldmError};
 
 const PLDM_TYPE_FW: u8 = 5;
 
@@ -216,7 +217,7 @@ pub fn query_device_identifiers(
     let rsp = pldm::pldm_xfer(ep, req)?;
 
     if rsp.cc != 0 {
-        return Err(io::Error::new(io::ErrorKind::Other, "PLDM error"));
+        return Err(io::Error::new(io::ErrorKind::Other, "PLDM error").into());
     }
 
     let f = length_value(map(le_u32, |l| l + 1), DeviceIdentifiers::parse);
@@ -224,7 +225,7 @@ pub fn query_device_identifiers(
     let res = complete(f)(rsp.data.as_slice());
 
     res.map(|(_, d)| d)
-        .map_err(|_e| io::Error::new(io::ErrorKind::Other, "parse error"))
+        .map_err(|_e| PldmError::proto_err("can't parse QDI response"))
 }
 
 pub type PldmDate = chrono::naive::NaiveDate;
@@ -499,7 +500,7 @@ pub fn query_firmware_parameters(
     let rsp = pldm::pldm_xfer(ep, req)?;
 
     if rsp.cc != 0 {
-        return Err(io::Error::new(io::ErrorKind::Other, "PLDM error"));
+        return Err(PldmError::cmd_err(rsp.cc, "QFP command failed"));
     }
 
     let f = FirmwareParameters::parse;
@@ -507,7 +508,7 @@ pub fn query_firmware_parameters(
     let res = complete(f)(rsp.data.as_slice());
 
     res.map(|(_, d)| d)
-        .map_err(|_e| io::Error::new(io::ErrorKind::Other, "parse error"))
+        .map_err(|_e| PldmError::proto_err("can't parse QFP response"))
 }
 
 const XFER_SIZE: usize = 16 * 1024;
@@ -546,13 +547,13 @@ pub fn request_update(
     let rsp = pldm::pldm_xfer(ep, req)?;
 
     if rsp.cc != 0 {
-        return Err(io::Error::new(io::ErrorKind::Other, "PLDM error"));
+        return Err(PldmError::cmd_err(rsp.cc, "RU command failed"));
     }
 
     let res = complete(RequestUpdateResponse::parse)(rsp.data.as_slice());
 
     res.map(|(_, d)| d)
-        .map_err(|_e| io::Error::new(io::ErrorKind::Other, "parse error"))
+        .map_err(|_e| PldmError::proto_err("can't parse RU response"))
 }
 
 pub fn cancel_update(ep: &MctpEndpoint) -> Result<()> {
@@ -585,15 +586,11 @@ impl Update {
                     .collect::<Vec<_>>();
 
                 if fwdevs.is_empty() {
-                    return Err(io::Error::new(
-                        io::ErrorKind::Other,
-                        "no matching devices",
-                    ));
+                    return Err(PldmError::update_err("no matching devices"));
                 }
 
                 if fwdevs.len() != 1 {
-                    return Err(io::Error::new(
-                        io::ErrorKind::Other,
+                    return Err(PldmError::update_err(
                         "multiple matching devices",
                     ));
                 }
@@ -650,10 +647,7 @@ pub fn pass_component_table(ep: &MctpEndpoint, update: &Update) -> Result<()> {
 
         if rsp.cc != 0 {
             println!("PassComponentTable command failed, cc 0x{:02x}", rsp.cc);
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "PLDM(PCT) error",
-            ));
+            return Err(PldmError::proto_err("Error in PCT response"));
         }
     }
 
@@ -690,10 +684,7 @@ pub fn update_component(
 
     if rsp.cc != 0 {
         println!("UpdateComponent command failed: cc 0x{:02x}", rsp.cc);
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            "PLDM(UC) error",
-        ));
+        return Err(PldmError::cmd_err(rsp.cc, "Update Component"));
     }
 
     loop {
@@ -739,20 +730,13 @@ pub fn update_component(
                 let mut fw_resp = fw_req.response();
                 fw_resp.cc = 0;
                 pldm::pldm_tx_resp(ep, &fw_resp)?;
-                if res != 0 {
-                    return Err(io::Error::new(
-                        io::ErrorKind::Other,
-                        "PLDM(TC) error"),
-                    );
-                }
                 break;
             }
             _ => {
                 println!("unknown req during transfer");
                 println!(" {:?}", fw_req);
 
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
+                return Err(PldmError::proto_err(
                     "unexpected command during update",
                 ));
             }
@@ -764,18 +748,13 @@ pub fn update_component(
     match fw_req.cmd {
         0x17 => {
             let res = fw_req.data[0];
-            println!("fimware verify result: 0x{:02x}", res);
             if res != 0 {
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    "verify failure",
-                ));
+                return Err(PldmError::update_err("firmware verify failure"));
             }
         }
         _ => {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "unexpected command during verify",
+            return Err(PldmError::update_err(
+                "unexpected command in verify state",
             ));
         }
     }
@@ -788,18 +767,13 @@ pub fn update_component(
     match fw_req.cmd {
         0x18 => {
             let res = fw_req.data[0];
-            println!("fimware apply result: 0x{:02x}", res);
             if res != 0 {
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    "apply failure",
-                ));
+                return Err(PldmError::update_err("firmware apply failure"));
             }
         }
         _ => {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "unexpected command during apply",
+            return Err(PldmError::update_err(
+                "unexpected command in apply state",
             ));
         }
     }
