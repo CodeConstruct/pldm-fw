@@ -12,3 +12,9 @@ enumset = "1.1"
 argh = "0.1"
 uuid = { version = "1.3", features = ["v1"] }
 anyhow = "1.0"
+
+[profile.release]
+strip = true
+lto = true
+opt-level = "s"
+panic = "abort"
