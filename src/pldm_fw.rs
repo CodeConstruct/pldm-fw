@@ -577,7 +577,14 @@ impl Update {
         force_device: Option<usize>,
     ) -> Result<Self> {
         let dev = match force_device {
-            Some(n) => &pkg.devices[n],
+            Some(n) => {
+                if n >= pkg.devices.len() {
+                    return Err(PldmError::update_err(
+                        "invalid device index",
+                    ));
+                }
+                &pkg.devices[n]
+            }
             None => {
                 let fwdevs = pkg
                     .devices
