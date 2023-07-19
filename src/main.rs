@@ -13,7 +13,8 @@ mod pldm_fw_pkg;
 use anyhow::Context;
 use argh::FromArgs;
 use enumset::{EnumSet, EnumSetType};
-use std::fmt::Write;
+use std::io::Write;
+use std::fmt::Write as _;
 
 fn comma_separated<T: EnumSetType + std::fmt::Debug>(e: EnumSet<T>) -> String {
     let mut s = String::new();
@@ -86,6 +87,34 @@ fn print_package(pkg: &pldm_fw_pkg::Package) {
         println!("       options:        0x{:04x}", cmp.options);
         println!("       activation:     0x{:04x}", cmp.activation_method);
     }
+}
+
+fn print_device(dev: &pldm_fw::DeviceIdentifiers) {
+    println!("Device: {}", dev);
+}
+
+fn print_update(update: &pldm_fw::Update) {
+    println!("Update:");
+    println!("  Package version: {}", update.package.version);
+    println!("  Components to update:");
+    for (idx, cmp_idx) in update.components.iter().enumerate() {
+        let cmp = &update.package.components[*cmp_idx];
+        println!("   {:2}: id {:04x}, version {}", idx, cmp.identifier, cmp.version);
+    }
+}
+
+fn confirm_update() -> bool {
+    let mut line = String::new();
+
+    print!("\nConfirm update (y,N)? ");
+    let _ = std::io::stdout().flush();
+    let rc = std::io::stdin().read_line(&mut line);
+
+    if ! rc.is_ok() {
+        return false;
+    }
+
+    line.trim().to_ascii_lowercase() == "y"
 }
 
 fn open_package(fname: String) -> anyhow::Result<pldm_fw_pkg::Package> {
@@ -191,14 +220,19 @@ fn main() -> anyhow::Result<()> {
                 pkg,
                 u.force_device,
             )?;
-            println!("update: {:#?}", update);
+
+            println!("Proposed update:");
+            print_device(&dev);
+            print_update(&update);
+
+            let c = confirm_update();
+            if !c {
+                return Ok(())
+            }
 
             let _ = pldm_fw::request_update(&ep, &update)?;
             pldm_fw::pass_component_table(&ep, &update)?;
             pldm_fw::update_components(&ep, &mut update)?;
-            /*
-            let _ = pldm_fw::cancel_update(&ep);
-            */
         }
         Command::Cancel(c) => {
             let ep = mctp::MctpEndpoint::new(c.eid)?;

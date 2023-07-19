@@ -565,8 +565,8 @@ pub fn cancel_update(ep: &MctpEndpoint) -> Result<()> {
 
 #[derive(Debug)]
 pub struct Update {
-    package: pldm_fw_pkg::Package,
-    components: Vec<usize>,
+    pub package: pldm_fw_pkg::Package,
+    pub components: Vec<usize>,
 }
 
 impl Update {
