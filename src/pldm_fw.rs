@@ -680,6 +680,22 @@ pub fn pass_component_table(ep: &MctpEndpoint, update: &Update) -> Result<()> {
     Ok(())
 }
 
+fn duration_str(d: &chrono::Duration) -> String {
+    let secs = d.num_seconds();
+    if secs < 0 {
+        format!("unknown")
+    } else if secs > 86400 {
+        format!("{} days", secs / 86400)
+    } else {
+        let mut s = secs;
+        let h = s / 3600;
+        s -= h * 3600;
+        let m = s / 60;
+        s -= m * 60;
+        format!("{:02}:{:02}:{:02}", h, m, s)
+    }
+}
+
 pub fn update_component(
     ep: &MctpEndpoint,
     package: &pldm_fw_pkg::Package,
@@ -697,6 +713,7 @@ pub fn update_component(
     req.data.extend_from_slice(&component.comparison_stamp.to_le_bytes());
 
     let sz: u32 = component.file_size as u32;
+    let mut sz_done: u32 = 0;
     req.data.extend_from_slice(&sz.to_le_bytes());
 
     // todo: flags: request forced update?
@@ -713,6 +730,8 @@ pub fn update_component(
         return Err(PldmError::cmd_err(rsp.cc, "Update Component"));
     }
 
+    let start = chrono::Utc::now();
+
     loop {
         // we should be in update mode, handle incoming data requests
         let fw_req = pldm::pldm_rx_req(ep)?;
@@ -728,11 +747,6 @@ pub fn update_component(
                     io::Error::new(io::ErrorKind::Other, "parse error")
                 })?;
 
-                println!(
-                    "Data request: offset 0x{:08x}, len 0x{:08x}",
-                    offset, len
-                );
-
                 let mut buf = Vec::new();
                 buf.resize(len as usize, 0u8);
 
@@ -744,12 +758,34 @@ pub fn update_component(
                 fw_resp.data = buf;
 
                 pldm::pldm_tx_resp(ep, &fw_resp)?;
+
+                sz_done += len;
+                let elapsed = chrono::Utc::now() - start;
+                let rate = elapsed / sz_done as i32; // time per byte
+                let bps =
+                    1_000_000.0 / rate.num_microseconds().unwrap_or(0) as f32;
+
+                /* blocks may be repeated */
+                let sz_left = if sz_done <= sz { sz - sz_done } else { 0 };
+
+                let remaining = rate * sz_left as i32;
+
+                println!(
+                    "Data request: offset 0x{:08x}, len 0x{:x}, {:2}% {:.0} B/sec, {} remaining",
+                    offset, len, 100 * sz_done / sz, bps,
+                    duration_str(&remaining),
+                );
             }
             0x16 => {
                 /* Transfer Complete */
                 let res = fw_req.data[0];
+                let elapsed = chrono::Utc::now() - start;
+
                 if res == 0 {
-                    println!("firmware transfer complete");
+                    println!(
+                        "firmware transfer complete, duration {}",
+                        duration_str(&elapsed)
+                    );
                 } else {
                     println!("fimware transfer error: 0x{:02x}", res);
                 }
