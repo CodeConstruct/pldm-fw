@@ -696,6 +696,22 @@ fn duration_str(d: &chrono::Duration) -> String {
     }
 }
 
+fn bps_str(d: &chrono::Duration) -> String {
+    let bps = 1_000_000.0 / d.num_microseconds().unwrap_or(0) as f32;
+    const B_PER_MB : f32 = 1_000_000.0;
+    #[allow(non_upper_case_globals)]
+    const B_PER_kB : f32 = 1_000.0;
+    let threshold = 0.8;
+
+    if bps > (B_PER_MB * threshold) {
+        format!("{:.2} MB/sec", bps / B_PER_MB)
+    } else if bps > (B_PER_kB * threshold) {
+        format!("{:.2} kB/sec", bps / B_PER_kB)
+    } else {
+        format!("{:.0} B/sec", bps)
+    }
+}
+
 pub fn update_component(
     ep: &MctpEndpoint,
     package: &pldm_fw_pkg::Package,
@@ -762,8 +778,6 @@ pub fn update_component(
                 sz_done += len;
                 let elapsed = chrono::Utc::now() - start;
                 let rate = elapsed / sz_done as i32; // time per byte
-                let bps =
-                    1_000_000.0 / rate.num_microseconds().unwrap_or(0) as f32;
 
                 /* blocks may be repeated */
                 let sz_left = if sz_done <= sz { sz - sz_done } else { 0 };
@@ -771,8 +785,9 @@ pub fn update_component(
                 let remaining = rate * sz_left as i32;
 
                 println!(
-                    "Data request: offset 0x{:08x}, len 0x{:x}, {:2}% {:.0} B/sec, {} remaining",
-                    offset, len, 100 * sz_done / sz, bps,
+                    "Data request: offset 0x{:08x}, len 0x{:x}, {:2}% {}, {} remaining",
+                    offset, len, 100 * sz_done / sz,
+                    bps_str(&rate),
                     duration_str(&remaining),
                 );
             }
