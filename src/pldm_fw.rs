@@ -656,6 +656,25 @@ pub fn pass_component_table(ep: &MctpEndpoint, update: &Update) -> Result<()> {
             println!("PassComponentTable command failed, cc 0x{:02x}", rsp.cc);
             return Err(PldmError::proto_err("Error in PCT response"));
         }
+
+        if rsp.data.len() < 2 {
+            println!("PassComponentTable response has invalid length");
+            return Err(PldmError::proto_err("Invalid PCT response"));
+        }
+
+        if rsp.data[0] != 0 {
+            match rsp.data[1] {
+                0x00 => (),
+                0x06 => {
+                    println!("component {} not supported", idx);
+                    return Err(PldmError::update_err("unsupported component"));
+                }
+                _ => {
+                    println!("unknown PCT response 0x{:02x}", rsp.data[1]);
+                    return Err(PldmError::proto_err("PCT response"));
+                }
+            }
+        }
     }
 
     Ok(())
