@@ -156,6 +156,7 @@ enum Command {
     Update(UpdateCommand),
     Cancel(CancelCommand),
     PkgInfo(PkgInfoCommand),
+    Version(VersionCommand),
 }
 
 #[derive(FromArgs, Debug)]
@@ -209,6 +210,10 @@ struct PkgInfoCommand {
     file: String,
 }
 
+#[derive(FromArgs, Debug)]
+#[argh(subcommand, name = "version", description = "Print pldm-fw version")]
+struct VersionCommand {}
+
 fn main() -> anyhow::Result<()> {
     let args: Args = argh::from_env();
 
@@ -254,6 +259,10 @@ fn main() -> anyhow::Result<()> {
         Command::PkgInfo(p) => {
             let pkg = open_package(p.file)?;
             print_package(&pkg);
+        }
+        Command::Version(_) => {
+            println!("pldm-fw version {}", env!("VERSION"));
+            return Ok(())
         }
     }
 
