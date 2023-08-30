@@ -86,6 +86,7 @@ fn print_package(pkg: &pldm_fw_pkg::Package) {
         println!("       comparison:     0x{:08x}", cmp.comparison_stamp);
         println!("       options:        0x{:04x}", cmp.options);
         println!("       activation:     0x{:04x}", cmp.activation_method);
+        println!("       file size:      0x{:04x}", cmp.file_size);
     }
 }
 
