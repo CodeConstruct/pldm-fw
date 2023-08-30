@@ -124,6 +124,7 @@ enum Command {
     Inventory(InventoryCommand),
     Update(UpdateCommand),
     Cancel(CancelCommand),
+    Activate(ActivateCommand),
     PkgInfo(PkgInfoCommand),
 }
 
@@ -152,11 +153,23 @@ struct UpdateCommand {
     /// force a specific device from this package (by index)
     #[argh(option)]
     force_device: Option<usize>,
+
+    /// activate (reset) after success
+    #[argh(switch)]
+    activate: bool,
 }
 
 #[derive(FromArgs, Debug)]
 #[argh(subcommand, name = "cancel", description = "Cancel ongoing update")]
 struct CancelCommand {
+    /// MCTP EID of device
+    #[argh(positional, from_str_fn(eid_parse))]
+    eid: u8,
+}
+
+#[derive(FromArgs, Debug)]
+#[argh(subcommand, name = "activate", description = "Activate firmware")]
+struct ActivateCommand {
     /// MCTP EID of device
     #[argh(positional, from_str_fn(eid_parse))]
     eid: u8,
@@ -190,6 +203,7 @@ fn main() -> anyhow::Result<()> {
                 &fwp,
                 pkg,
                 u.force_device,
+                u.activate,
             )?;
             println!("update: {:#?}", update);
 
@@ -199,6 +213,11 @@ fn main() -> anyhow::Result<()> {
             /*
             let _ = pldm_fw::cancel_update(&ep);
             */
+        }
+        Command::Activate(u) => {
+            let ep = mctp::MctpEndpoint::new(u.eid)?;
+            pldm_fw::activate_firmware(&ep)?;
+            println!("activate sent");
         }
         Command::Cancel(c) => {
             let ep = mctp::MctpEndpoint::new(c.eid)?;

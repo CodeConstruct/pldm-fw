@@ -567,6 +567,7 @@ pub fn cancel_update(ep: &MctpEndpoint) -> Result<()> {
 pub struct Update {
     package: pldm_fw_pkg::Package,
     components: Vec<usize>,
+    activate: bool,
 }
 
 impl Update {
@@ -575,6 +576,7 @@ impl Update {
         _fwp: &FirmwareParameters,
         pkg: pldm_fw_pkg::Package,
         force_device: Option<usize>,
+        activate: bool,
     ) -> Result<Self> {
         let dev = match force_device {
             Some(n) => &pkg.devices[n],
@@ -604,6 +606,7 @@ impl Update {
         Ok(Self {
             package: pkg,
             components,
+            activate,
         })
     }
 }
@@ -653,6 +656,25 @@ pub fn pass_component_table(ep: &MctpEndpoint, update: &Update) -> Result<()> {
 
     Ok(())
 }
+
+pub fn activate_firmware(
+    ep: &MctpEndpoint,
+) -> Result<()> {
+    let mut req = pldm::PldmRequest::new(PLDM_TYPE_FW, 0x1a);
+    let self_contained = true;
+    req.data.push(self_contained as u8);
+
+    println!("activate firmware req: {:02x?}", req);
+
+    let rsp = pldm::pldm_xfer(ep, req)?;
+
+    if rsp.cc != 0 {
+        println!("UpdateComponent command failed: cc 0x{:02x}", rsp.cc);
+        return Err(PldmError::cmd_err(rsp.cc, "Update Component"));
+    }
+    Ok(())
+}
+
 
 pub fn update_component(
     ep: &MctpEndpoint,
@@ -794,6 +816,12 @@ pub fn update_components(ep: &MctpEndpoint, update: &mut Update) -> Result<()> {
     for idx in components {
         let component = update.package.components.get(idx).unwrap();
         update_component(&ep, &update.package, component)?;
+    }
+
+    println!("Update finished");
+    if update.activate {
+        println!("Activating");
+        activate_firmware(ep)?;
     }
 
     Ok(())

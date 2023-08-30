@@ -67,7 +67,7 @@ impl fmt::Debug for MctpSockAddr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "McptSockAddr(family={}, net={}, addr={}, type={}, tag={})",
+            "MctpSockAddr(family={}, net={}, addr={}, type={}, tag={})",
             self.0.smctp_family,
             self.0.smctp_network,
             self.0.smctp_addr,
