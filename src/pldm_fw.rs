@@ -585,6 +585,7 @@ pub fn cancel_update(ep: &MctpEndpoint) -> Result<()> {
 #[derive(Debug)]
 pub struct Update {
     pub package: pldm_fw_pkg::Package,
+    pub index: u8,
     pub components: Vec<usize>,
 }
 
@@ -593,6 +594,7 @@ impl Update {
         dev: &DeviceIdentifiers,
         _fwp: &FirmwareParameters,
         pkg: pldm_fw_pkg::Package,
+        index: Option<u8>,
         force_device: Option<usize>,
         force_components: Vec<usize>,
     ) -> Result<Self> {
@@ -641,6 +643,7 @@ impl Update {
         Ok(Self {
             package: pkg,
             components,
+            index,
         })
     }
 }
@@ -673,8 +676,7 @@ pub fn pass_component_table(ep: &MctpEndpoint, update: &Update) -> Result<()> {
         );
         req.data.extend_from_slice(&component.identifier.to_le_bytes());
 
-        // todo: match index from fwp?
-        req.data.extend_from_slice(&0x0000u16.to_le_bytes());
+        req.data.extend_from_slice(&update.index.to_le_bytes());
 
         req.data.extend_from_slice(&component.comparison_stamp.to_le_bytes());
 
@@ -746,6 +748,7 @@ pub fn update_component(
     ep: &MctpEndpoint,
     package: &pldm_fw_pkg::Package,
     component: &pldm_fw_pkg::PackageComponent,
+    index: u8,
 ) -> Result<()> {
     let mut req = pldm::PldmRequest::new(PLDM_TYPE_FW, 0x14);
 
@@ -753,8 +756,7 @@ pub fn update_component(
                               .as_u16().to_le_bytes());
     req.data.extend_from_slice(&component.identifier.to_le_bytes());
 
-    // todo: classification index: match index from fwp?
-    req.data.extend_from_slice(&0x00u8.to_le_bytes());
+    req.data.extend_from_slice(&index.to_le_bytes());
 
     req.data.extend_from_slice(&component.comparison_stamp.to_le_bytes());
 
@@ -900,7 +902,7 @@ pub fn update_components(ep: &MctpEndpoint, update: &mut Update) -> Result<()> {
 
     for idx in components {
         let component = update.package.components.get(idx).unwrap();
-        update_component(&ep, &update.package, component)?;
+        update_component(&ep, &update.package, component, update.index)?;
     }
 
     Ok(())

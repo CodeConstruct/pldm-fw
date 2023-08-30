@@ -96,6 +96,7 @@ fn print_device(dev: &pldm_fw::DeviceIdentifiers) {
 fn print_update(update: &pldm_fw::Update) {
     println!("Update:");
     println!("  Package version: {}", update.package.version);
+    println!("  Apply to index:  {}", update.index);
     println!("  Components to update:");
     for (idx, cmp_idx) in update.components.iter().enumerate() {
         let cmp = &update.package.components[*cmp_idx];
@@ -178,6 +179,11 @@ struct UpdateCommand {
     #[argh(positional)]
     file: String,
 
+    /// provide a specific Component Classification Index (for all components)
+    /// during update, defaults to 0.
+    #[argh(option)]
+    component_index: Option<u8>,
+
     /// force a specific device from this package (by index)
     #[argh(option)]
     force_device: Option<usize>,
@@ -222,6 +228,7 @@ fn main() -> anyhow::Result<()> {
                 &dev,
                 &fwp,
                 pkg,
+                u.component_index,
                 u.force_device,
                 u.force_components,
             )?;
