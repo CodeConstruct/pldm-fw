@@ -181,6 +181,10 @@ struct UpdateCommand {
     /// force a specific device from this package (by index)
     #[argh(option)]
     force_device: Option<usize>,
+
+    /// explicitly specify components (by index)
+    #[argh(option)]
+    force_components: Vec<usize>,
 }
 
 #[derive(FromArgs, Debug)]
@@ -219,6 +223,7 @@ fn main() -> anyhow::Result<()> {
                 &fwp,
                 pkg,
                 u.force_device,
+                u.force_components,
             )?;
 
             println!("Proposed update:");

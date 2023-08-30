@@ -575,6 +575,7 @@ impl Update {
         _fwp: &FirmwareParameters,
         pkg: pldm_fw_pkg::Package,
         force_device: Option<usize>,
+        force_components: Vec<usize>,
     ) -> Result<Self> {
         let dev = match force_device {
             Some(n) => {
@@ -606,7 +607,17 @@ impl Update {
             }
         };
 
-        let components = dev.components.as_index_vec();
+        let index = index.unwrap_or(0u8);
+
+        let components = if !force_components.is_empty() {
+            if force_components.iter().any(|c| { c >= &pkg.components.len() }) {
+                return Err(PldmError::update_err("invalid components"))
+            }
+
+            force_components
+        } else {
+            dev.components.as_index_vec()
+        };
 
         Ok(Self {
             package: pkg,
