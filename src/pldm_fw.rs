@@ -587,6 +587,7 @@ pub struct Update {
     pub package: pldm_fw_pkg::Package,
     pub index: u8,
     pub components: Vec<usize>,
+    pub self_activate: bool,
 }
 
 impl Update {
@@ -597,6 +598,7 @@ impl Update {
         index: Option<u8>,
         force_device: Option<usize>,
         force_components: Vec<usize>,
+        self_activate: bool,
     ) -> Result<Self> {
         let dev = match force_device {
             Some(n) => {
@@ -644,6 +646,7 @@ impl Update {
             package: pkg,
             components,
             index,
+            self_activate,
         })
     }
 }
@@ -742,6 +745,20 @@ fn bps_str(d: &chrono::Duration) -> String {
     } else {
         format!("{:.0} B/sec", bps)
     }
+}
+
+pub fn activate_firmware(
+    ep: &MctpEndpoint,
+    self_contained: bool,
+) -> Result<()> {
+    let mut req = pldm::PldmRequest::new(PLDM_TYPE_FW, 0x1a);
+    req.data.push(self_contained as u8);
+    let rsp = pldm::pldm_xfer(ep, req)?;
+
+    if rsp.cc != 0 {
+        return Err(PldmError::cmd_err(rsp.cc, "Activate Firmware"));
+    }
+    Ok(())
 }
 
 pub fn update_component(
@@ -902,6 +919,10 @@ pub fn update_components(ep: &MctpEndpoint, update: &mut Update) -> Result<()> {
         let component = update.package.components.get(idx).unwrap();
         update_component(&ep, &update.package, component, update.index)?;
     }
+
+    println!("Update finished");
+    println!("Activating");
+    activate_firmware(ep, update.self_activate)?;
 
     Ok(())
 }

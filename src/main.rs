@@ -215,6 +215,10 @@ struct UpdateCommand {
     /// explicitly specify components (by index)
     #[argh(option)]
     force_components: Vec<usize>,
+
+    /// perform self-contained activation (device support required)
+    #[argh(switch)]
+    self_activate: bool,
 }
 
 #[derive(FromArgs, Debug)]
@@ -270,6 +274,7 @@ fn main() -> anyhow::Result<()> {
                 u.component_index,
                 u.force_device,
                 u.force_components,
+                u.self_activate,
             )?;
 
             println!("Proposed update:");
