@@ -18,7 +18,7 @@ use nom::{
     bytes::complete::{tag, take},
     character::complete::{i32 as c_i32, u32 as c_u32},
     combinator::{
-        all_consuming, complete, flat_map, map, map_parser, rest, value,
+        all_consuming, complete, flat_map, map, map_parser, map_res, rest, value,
     },
     multi::{count, length_count, length_value},
     number::complete::{le_u16, le_u32, le_u8},
@@ -81,6 +81,8 @@ impl DescriptorString {
 #[derive(Debug)]
 pub enum Descriptor {
     PciVid(u16),
+    Iana(u32),
+    Uuid(uuid::Uuid),
     Vendor {
         title: Option<DescriptorString>,
         data: Vec<u8>,
@@ -121,6 +123,17 @@ impl Descriptor {
         map(le_u16, Self::PciVid)(buf)
     }
 
+    pub fn parse_iana(buf: &[u8]) -> VResult<&[u8], Self> {
+        map(le_u32, Self::Iana)(buf)
+    }
+
+    pub fn parse_uuid(buf: &[u8]) -> VResult<&[u8], Self> {
+        map_res(take(16usize), |b| {
+            let u = uuid::Uuid::from_slice(b)?;
+            Ok::<Descriptor, uuid::Error>(Self::Uuid(u))
+        })(buf)
+    }
+
     pub fn parse_vendor(buf: &[u8]) -> VResult<&[u8], Self> {
         // Attempt to parse with a proper title string; if not present just
         // consume everything as byte data
@@ -139,6 +152,8 @@ impl Descriptor {
         let f = |(typ, len)| {
             let g = match typ {
                 0x0000 => Self::parse_pcivid,
+                0x0001 => Self::parse_iana,
+                0x0002 => Self::parse_uuid,
                 0xffff => Self::parse_vendor,
                 _ => unimplemented!(),
             };
@@ -152,6 +167,8 @@ impl fmt::Display for Descriptor {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::PciVid(id) => write!(f, "pci-vid:{:04x}", id),
+            Self::Iana(id) => write!(f, "iana:{:08x}", id),
+            Self::Uuid(id) => write!(f, "uuid:{}", id),
             Self::Vendor { title, data } => {
                 match title {
                     Some(t) => write!(f, "vendor:{}", t)?,
@@ -174,6 +191,8 @@ impl PartialEq for Descriptor {
             (Self::Vendor { data: s, .. }, Self::Vendor { data: o, .. }) => {
                 s == o
             }
+            (Self::Iana(s), Self::Iana(o)) => s == o,
+            (Self::Uuid(s), Self::Uuid(o)) => s == o,
             (Self::PciVid(s), Self::PciVid(o)) => s == o,
             _ => false,
         }
