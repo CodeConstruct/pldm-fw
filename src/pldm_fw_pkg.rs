@@ -15,7 +15,10 @@ use nom::{
 };
 use std::io::{BufReader, Read};
 use std::os::unix::fs::FileExt;
-use uuid::Uuid;
+use uuid::{Uuid, uuid};
+
+const PKG_UUID_1_0_X : Uuid = uuid!("f018878c-cb7d-4943-9800-a02f059aca02");
+const PKG_UUID_1_1_X : Uuid = uuid!("1244d264-8d7d-4718-a030-fc8a56587d5a");
 
 use crate::pldm_fw::{
     self, parse_string, parse_string_adjacent, Descriptor, DescriptorString,
@@ -250,6 +253,28 @@ impl Package {
         let (r, devices) = length_count(le_u8, f)(r)
             .finish()
             .map_err(|_| PldmPackageError::new_format("can't parse devices"))?;
+
+        /* this is the first divegence in package format versions; the
+         * downstream device identification area is only present in 1.1.x
+         */
+        let r = match identifier {
+            PKG_UUID_1_0_X => r,
+            PKG_UUID_1_1_X => {
+                let (r, _downstream_devices) =
+                    length_count(le_u8, f)(r).finish().map_err(|_| {
+                        PldmPackageError::new_format(
+                            "can't parse downstream devices",
+                        )
+                    })?;
+                r
+            }
+            _ => {
+                return Err(PldmPackageError::new_format(&format!(
+                    "unknown package UUID {}",
+                    identifier
+                )))
+            }
+        };
 
         let f = |d| PackageComponent::parse(d);
         let (_, components) =
