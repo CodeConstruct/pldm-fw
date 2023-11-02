@@ -769,8 +769,6 @@ pub fn update_component(
 
     component.version.write_utf8_bytes(&mut req.data);
 
-    println!("update component req: {:02x?}", req);
-
     let rsp = pldm::pldm_xfer(ep, req)?;
 
     if rsp.cc != 0 {
