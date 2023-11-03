@@ -816,7 +816,7 @@ pub fn update_component(
 
                 println!(
                     "Data request: offset 0x{:08x}, len 0x{:x}, {:2}% {}, {} remaining",
-                    offset, len, 100 * sz_done / sz,
+                    offset, len, 100 * (sz_done as u64) / sz as u64,
                     bps_str(&rate),
                     duration_str(&remaining),
                 );
