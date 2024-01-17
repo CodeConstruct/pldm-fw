@@ -10,7 +10,7 @@ mod pldm;
 mod pldm_fw;
 mod pldm_fw_pkg;
 
-use anyhow::Context;
+use anyhow::{Context, bail};
 use argh::FromArgs;
 use enumset::{EnumSet, EnumSetType};
 use std::io::Write;
@@ -105,6 +105,27 @@ fn print_update(update: &pldm_fw::Update) {
     }
 }
 
+fn extract_component(pkg: &pldm_fw_pkg::Package, idx: usize) -> anyhow::Result<()> {
+    if idx >= pkg.components.len() {
+        bail!("no component with index {}", idx);
+    }
+    let comp = &pkg.components[idx];
+
+    let fname = format!("component-{}.{:04x}.bin", idx, comp.identifier);
+    let mut f = std::fs::File::create(&fname)
+        .with_context(|| format!("Can't open output file {}", fname))?;
+
+    println!("extracting component {} to {}", idx, fname);
+
+    let mut buf = Vec::new();
+    buf.resize(comp.file_size as usize, 0u8);
+    pkg.read_component(&comp, 0, &mut buf)?;
+
+    f.write(&buf)?;
+
+    Ok(())
+}
+
 fn confirm_update() -> bool {
     let mut line = String::new();
 
@@ -157,6 +178,7 @@ enum Command {
     Cancel(CancelCommand),
     PkgInfo(PkgInfoCommand),
     Version(VersionCommand),
+    Extract(ExtractCommand),
 }
 
 #[derive(FromArgs, Debug)]
@@ -211,6 +233,17 @@ struct PkgInfoCommand {
 }
 
 #[derive(FromArgs, Debug)]
+#[argh(subcommand, name = "extract", description = "Extract package contents")]
+struct ExtractCommand {
+    #[argh(positional)]
+    file: String,
+
+    /// components to extract (by index)
+    #[argh(positional)]
+    components: Vec<usize>,
+}
+
+#[derive(FromArgs, Debug)]
 #[argh(subcommand, name = "version", description = "Print pldm-fw version")]
 struct VersionCommand {}
 
@@ -259,6 +292,18 @@ fn main() -> anyhow::Result<()> {
         Command::PkgInfo(p) => {
             let pkg = open_package(p.file)?;
             print_package(&pkg);
+        }
+        Command::Extract(e) => {
+            let pkg = open_package(e.file)?;
+            if e.components.len() == 0 {
+                println!("No components specified to extract");
+            }
+            for idx in e.components {
+                let res = extract_component(&pkg, idx);
+                if let Err(e) = res {
+                    println!("Error extracting: {:?}", e);
+                }
+            }
         }
         Command::Version(_) => {
             println!("pldm-fw version {}", env!("VERSION"));
