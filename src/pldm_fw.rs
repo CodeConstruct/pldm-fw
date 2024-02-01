@@ -31,6 +31,40 @@ use crate::pldm::{Result, PldmError};
 
 const PLDM_TYPE_FW: u8 = 5;
 
+#[derive(Debug, PartialEq)]
+#[repr(u8)]
+pub enum PldmFDState {
+    Idle = 0,
+    LearnComponents = 1,
+    ReadyXfer = 2,
+    Download = 3,
+    Verify = 4,
+    Apply = 5,
+    Activate = 6,
+}
+
+impl TryFrom<u8> for PldmFDState {
+    type Error = &'static str;
+    fn try_from(value: u8) -> std::result::Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Idle),
+            1 => Ok(Self::LearnComponents),
+            2 => Ok(Self::ReadyXfer),
+            3 => Ok(Self::Download),
+            4 => Ok(Self::Verify),
+            5 => Ok(Self::Apply),
+            6 => Ok(Self::Activate),
+            _ => Err("unknown state!"),
+        }
+    }
+}
+
+impl PldmFDState {
+    pub fn parse(buf: &[u8]) -> VResult<&[u8], Self> {
+        map_res(le_u8, |x| TryInto::<PldmFDState>::try_into(x))(buf)
+    }
+}
+
 //type VResult<I,O> = IResult<I, O, VerboseError<I>>;
 type VResult<I, O> = IResult<I, O>;
 
@@ -555,6 +589,8 @@ pub fn request_update(
     ep: &MctpEndpoint,
     update: &Update,
 ) -> Result<RequestUpdateResponse> {
+    check_fd_state(ep, PldmFDState::Idle)?;
+
     let mut req = pldm::PldmRequest::new(PLDM_TYPE_FW, 0x10);
 
     req.data.extend_from_slice(&XFER_SIZE.to_le_bytes());
@@ -579,6 +615,67 @@ pub fn cancel_update(ep: &MctpEndpoint) -> Result<()> {
     let req = pldm::PldmRequest::new(PLDM_TYPE_FW, 0x1d);
     let rsp = pldm::pldm_xfer(ep, req)?;
     println!("cancel rsp: cc {:x}, data {:?}", rsp.cc, rsp.data);
+    Ok(())
+}
+
+#[derive(Debug)]
+pub struct GetStatusResponse {
+    pub current_state: PldmFDState,
+    pub previous_state: PldmFDState,
+    pub aux_state: u8,
+    pub aux_state_status: u8,
+    pub progress_percent: u8,
+    pub reason_code: u8,
+    pub update_option_flags_enabled: u32,
+}
+
+impl GetStatusResponse {
+    pub fn parse(buf: &[u8]) -> VResult<&[u8], Self> {
+        let (r, t) = tuple((
+                PldmFDState::parse, PldmFDState::parse,
+                le_u8, le_u8,
+                le_u8, le_u8, le_u32
+        ))(buf)?;
+        Ok((
+            r,
+            Self {
+                current_state: t.0,
+                previous_state: t.1,
+                aux_state: t.2,
+                aux_state_status: t.3,
+                progress_percent: t.4,
+                reason_code: t.5,
+                update_option_flags_enabled: t.6,
+            },
+        ))
+    }
+}
+
+impl fmt::Display for GetStatusResponse {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{:?}", self.current_state)
+    }
+}
+
+fn check_fd_state(ep: &MctpEndpoint, expected_state: PldmFDState) -> Result<()> {
+    let req = pldm::PldmRequest::new(PLDM_TYPE_FW, 0x1b);
+    let rsp = pldm::pldm_xfer(ep, req)?;
+
+    if rsp.cc != 0 {
+        return Err(io::Error::new(io::ErrorKind::Other, "PLDM error").into());
+    }
+
+    let (_, res) = complete(GetStatusResponse::parse)(rsp.data.as_slice())
+        .map_err(|_| PldmError::proto_err("can't parse Get Status response"))?;
+
+    //todo: flag
+    println!("state: {:?}", res.current_state);
+
+    if res.current_state != expected_state {
+        let msg = format!("invalid state {:?}", res.current_state);
+        return Err(PldmError::proto_err(&msg));
+    }
+
     Ok(())
 }
 
@@ -666,6 +763,8 @@ pub fn pass_component_table(ep: &MctpEndpoint, update: &Update) -> Result<()> {
     let components = &update.components;
     let len = components.len();
 
+    check_fd_state(ep, PldmFDState::LearnComponents)?;
+
     for (n, idx) in components.iter().enumerate() {
         let component = update.package.components.get(*idx).unwrap();
         let mut req = pldm::PldmRequest::new(PLDM_TYPE_FW, 0x13);
@@ -750,6 +849,8 @@ pub fn update_component(
     component: &pldm_fw_pkg::PackageComponent,
     index: u8,
 ) -> Result<()> {
+    check_fd_state(ep, PldmFDState::ReadyXfer)?;
+
     let mut req = pldm::PldmRequest::new(PLDM_TYPE_FW, 0x14);
 
     req.data.extend_from_slice(&component.classification
@@ -888,6 +989,8 @@ pub fn update_component(
     let mut fw_resp = fw_req.response();
     fw_resp.cc = 0;
     pldm::pldm_tx_resp(ep, &fw_resp)?;
+
+    check_fd_state(ep, PldmFDState::ReadyXfer)?;
 
     Ok(())
 }
