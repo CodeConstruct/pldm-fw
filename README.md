@@ -18,3 +18,5 @@ Cross compile to an AST2600:
 ```
 cargo build --release --target armv7-unknown-linux-musleabihf
 ```
+
+Output executable is `./target/armv7-unknown-linux-musleabihf/release/pldm-fw`
